@@ -1,0 +1,128 @@
+name: "Slack Notifications for Sample App Builds"
+description: "Sends Slack notifications for sample app builds based on Firebase distribution groups"
+inputs:
+  build_status:
+    description: "Build status (success or failure)"
+    required: true
+  app_icon_emoji:
+    description: "Emoji representing the app type"
+    required: true
+  app_name:
+    description: "App name to display in Slack message"
+    required: true
+  firebase_app_id:
+    description: "Firebase App ID used for invite links"
+    required: true
+  firebase_distribution_groups:
+    description: "Comma separated Firebase distribution groups for sample apps"
+    required: true
+  git_context:
+    description: "Git context (e.g., branch name with commit hash)"
+    required: true
+  icon_url:
+    description: "Icon URL for Slack message user"
+    required: true
+  instructions_guide_link:
+    description: "Link to instructions guide for the sample app"
+    required: true
+  platform:
+    description: "Platform for the build (iOS or Android)"
+    required: true
+  repository_name:
+    description: "Repository name to display in Slack message user"
+    required: true
+  sdk_name:
+    description: "SDK name to display in Slack message"
+    required: true
+  sdk_version:
+    description: "SDK version number"
+    required: true
+  slack_webhook_url:
+    description: "Slack Webhook URL for sample app notifications"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Determine Slack Channel for Sample App Build
+      shell: bash
+      id: determine_channel
+      run: |
+        if [[ "${{ inputs.firebase_distribution_groups }}" == *"PUBLIC_BUILDS_GROUP"* ]]; then
+          slack_channel="#mobile-testbed-public-builds"
+        elif [[ "${{ inputs.firebase_distribution_groups }}" == *"NEXT_BUILDS_GROUP"* ]]; then
+          slack_channel="#mobile-testbed-next-builds"
+        elif [[ "${{ inputs.firebase_distribution_groups }}" == *"FEATURE_BUILDS_GROUP"* ]]; then
+          slack_channel="#mobile-testbed-feature-builds"
+        else
+          echo "No matching Slack channel found. Skipping notification."
+          exit 0
+        fi
+        echo "slack_channel=$slack_channel" >> $GITHUB_ENV
+
+    - name: Format Platform Name
+      shell: bash
+      run: |
+        if [[ "${{ inputs.platform }}" == "android" ]]; then
+          formatted_platform="Android"
+        elif [[ "${{ inputs.platform }}" == "ios" ]]; then
+          formatted_platform="iOS"
+        else
+          formatted_platform="${{ inputs.platform }}"
+        fi
+        echo "formatted_platform=$formatted_platform" >> $GITHUB_ENV
+
+    - name: Send Slack Notification on Success
+      if: inputs.build_status == 'success'
+      uses: slackapi/slack-github-action@v2.0.0
+      with:
+        webhook: ${{ inputs.slack_webhook_url }}
+        webhook-type: incoming-webhook
+        payload: |
+          username: "${{ inputs.repository_name }} Sample App Build Watcher"
+          icon_url: "${{ inputs.icon_url }}"
+          channel: "${{ env.slack_channel }}"
+          blocks:
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "*New ${{ inputs.app_name }} Testbed app available*"
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "${{ inputs.app_icon_emoji }} New testbed app utilizing the *${{ inputs.sdk_version }}* version of the *${{ inputs.sdk_name }}* is now available for the *${{ env.formatted_platform }}* platform (${{ inputs.git_context }})"
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "📥 *Open on mobile to update:* <https://appdistribution.firebase.google.com/testerapps/${{ inputs.firebase_app_id }}|Update app>"
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "📖 *Need help?* Follow the setup instructions here: <${{ inputs.instructions_guide_link }}|Sample App Instructions>"
+            - type: "divider"
+
+    - name: Send Slack Notification on Failure
+      if: inputs.build_status == 'failure'
+      uses: slackapi/slack-github-action@v2.0.0
+      with:
+        webhook: ${{ inputs.slack_webhook_url }}
+        webhook-type: incoming-webhook
+        payload: |
+          text: "*❌ ${{ inputs.app_name }} Testbed app build failed!* 🛑"
+          username: "${{ inputs.repository_name }} Sample App Build Watcher"
+          icon_url: "${{ inputs.icon_url }}"
+          channel: "${{ env.slack_channel }}"
+          blocks:
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "${{ inputs.app_icon_emoji }} *New testbed app build failed for the ${{ inputs.sdk_version }} version of the ${{ inputs.sdk_name }} on the ${{ env.formatted_platform }} platform (${{ inputs.git_context }})*"
+            - type: "divider"
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "❌ *Build failed before distribution. No release was made.*"
+            - type: "section"
+              text:
+                type: "mrkdwn"
+                text: "🔍 *Check GitHub Actions logs for details:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
