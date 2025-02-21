@@ -57,7 +57,7 @@ runs:
           slack_channel="#mobile-testbed-feature-builds"
         else
           echo "No matching Slack channel found. Skipping notification."
-          exit 0
+          slack_channel="#mobile-testbed-feature-builds"
         fi
         echo "slack_channel=$slack_channel" >> $GITHUB_ENV
 
