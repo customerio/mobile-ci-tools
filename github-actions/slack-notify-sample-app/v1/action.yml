@@ -28,9 +28,6 @@ inputs:
   platform:
     description: "Platform for the build (iOS or Android)"
     required: true
-  repository_name:
-    description: "Repository name to display in Slack message user"
-    required: true
   sdk_name:
     description: "SDK name to display in Slack message"
     required: true
@@ -83,14 +80,10 @@ runs:
         webhook: ${{ inputs.slack_webhook_url }}
         webhook-type: incoming-webhook
         payload: |
-          username: "${{ inputs.repository_name }} Sample App Build Watcher"
+          username: "New ${{ inputs.app_name }} Testbed app available"
           icon_url: "${{ inputs.icon_url }}"
           channel: "${{ env.slack_channel }}"
           blocks:
-            - type: "section"
-              text:
-                type: "mrkdwn"
-                text: "*New ${{ inputs.app_name }} Testbed app available*"
             - type: "section"
               text:
                 type: "mrkdwn"
@@ -112,8 +105,7 @@ runs:
         webhook: ${{ inputs.slack_webhook_url }}
         webhook-type: incoming-webhook
         payload: |
-          text: "*❌ ${{ inputs.app_name }} Testbed app build failed!* 🛑"
-          username: "${{ inputs.repository_name }} Sample App Build Watcher"
+          username: "New ${{ inputs.app_name }} Testbed app failed to build"
           icon_url: "${{ inputs.icon_url }}"
           channel: "${{ env.slack_channel }}"
           blocks:
@@ -125,7 +117,7 @@ runs:
             - type: "section"
               text:
                 type: "mrkdwn"
-                text: "❌ *Build failed before distribution. No release was made.*"
+                text: "🛑 *Build failed before distribution. No release was made.*"
             - type: "section"
               text:
                 type: "mrkdwn"
