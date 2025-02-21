@@ -47,12 +47,16 @@ runs:
     - name: Determine Slack Channel for Sample App Build
       shell: bash
       id: determine_channel
+      env:
+        FEATURE_BUILDS_GROUP: feature-branch
+        NEXT_BUILDS_GROUP: next
+        PUBLIC_BUILDS_GROUP: public
       run: |
-        if [[ "${{ inputs.firebase_distribution_groups }}" == *"PUBLIC_BUILDS_GROUP"* ]]; then
+        if [[ "${{ inputs.firebase_distribution_groups }}" =~ "${PUBLIC_BUILDS_GROUP}" ]]; then
           slack_channel="#mobile-testbed-public-builds"
-        elif [[ "${{ inputs.firebase_distribution_groups }}" == *"NEXT_BUILDS_GROUP"* ]]; then
+        elif [[ "${{ inputs.firebase_distribution_groups }}" =~ "${NEXT_BUILDS_GROUP}" ]]; then
           slack_channel="#mobile-testbed-next-builds"
-        elif [[ "${{ inputs.firebase_distribution_groups }}" == *"FEATURE_BUILDS_GROUP"* ]]; then
+        elif [[ "${{ inputs.firebase_distribution_groups }}" =~ "${FEATURE_BUILDS_GROUP}" ]]; then
           slack_channel="#mobile-testbed-feature-builds"
         else
           echo "No matching Slack channel found. Skipping notification."
