@@ -74,7 +74,7 @@ runs:
         echo "formatted_platform=$formatted_platform" >> $GITHUB_ENV
 
     - name: Send Slack Notification on Success
-      if: inputs.build_status == 'success'
+      if: ${{ inputs.build_status == 'success' && env.slack_channel != '' }}
       uses: slackapi/slack-github-action@v2.0.0
       with:
         webhook: ${{ inputs.slack_webhook_url }}
@@ -99,7 +99,7 @@ runs:
             - type: "divider"
 
     - name: Send Slack Notification on Failure
-      if: inputs.build_status != 'success'
+      if: ${{ inputs.build_status != 'success' && env.slack_channel != '' }}
       uses: slackapi/slack-github-action@v2.0.0
       with:
         webhook: ${{ inputs.slack_webhook_url }}
