@@ -27,7 +27,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Setup iOS
-      uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@shared-ios-ci
+      uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@v1
     
     # If running tests fails, sometimes it's because of scheme name is wrong. This gives us all available schemes.
     - name: Get XCode schemes 
