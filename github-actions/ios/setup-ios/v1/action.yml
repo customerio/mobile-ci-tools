@@ -19,6 +19,10 @@ runs:
     with:
       xcode-version: ${{ inputs.xcode-version }}
   - name: Ensure iOS Platform is installed
-    run: xcodebuild -downloadPlatform iOS -buildVersion ${{ inputs.iOS-sdk-version }}
+    run: |
+      # 1. Warm up the service
+      xcrun simctl list > /dev/null
+      # 2. Install the required iOS SDK
+      xcodebuild -downloadPlatform iOS -buildVersion ${{ inputs.iOS-sdk-version }}
     shell: bash
 
