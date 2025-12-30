@@ -20,5 +20,4 @@ runs:
       xcode-version: ${{ inputs.xcode-version }}
   - name: Ensure iOS Platform is installed
     run: xcodebuild -downloadPlatform iOS -buildVersion ${{ inputs.iOS-sdk-version }}
-    shell: bash
 
