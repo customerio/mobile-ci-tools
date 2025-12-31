@@ -18,7 +18,7 @@ on:
 
 jobs:
   automated-tests:
-    runs-on: macos-15
+    runs-on: macos-14
     permissions:
       checks: write # Need write permission to add test result check.
     env:
