@@ -5,7 +5,11 @@ inputs:
   xcode-version:
     description: 'Xcode version to install'
     required: false
-    default: '16.2'
+    default: '16.4'
+  iOS-sdk-version:
+    description: 'iOS SDK version to install'
+    required: false
+    default: '18.5'
 
 runs:
   using: "composite"
@@ -14,5 +18,11 @@ runs:
     uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
     with:
       xcode-version: ${{ inputs.xcode-version }}
-
+  - name: Ensure iOS Platform is installed
+    run: |
+      # 1. Warm up the service
+      xcrun simctl list > /dev/null
+      # 2. Install the required iOS SDK
+      xcodebuild -downloadPlatform iOS -buildVersion ${{ inputs.iOS-sdk-version }}
+    shell: bash
 

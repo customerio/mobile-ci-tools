@@ -6,7 +6,7 @@ on:
 jobs:
   format-and-lint:
     name: Assert that code has been linted and formatted
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       
