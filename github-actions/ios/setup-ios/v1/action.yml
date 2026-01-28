@@ -5,7 +5,7 @@ inputs:
   xcode-version:
     description: 'Xcode version to install'
     required: false
-    default: '26.2
+    default: '26.2'
 
 runs:
   using: "composite"
