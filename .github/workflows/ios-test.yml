@@ -18,17 +18,25 @@ on:
 
 jobs:
   automated-tests:
-    runs-on: macos-14
+    runs-on: macos-15
     permissions:
       checks: write # Need write permission to add test result check.
     env:
       CODECOV_UPLOAD_TOKEN: ${{ secrets.CODECOV_UPLOAD_TOKEN }}
     steps:
     - uses: actions/checkout@v4
-    
+
+    # Xcode 26.2 (Swift 6.2) is required so SPM can parse modern dependency
+    # manifests that use Swift 6.1+ syntax (e.g. trailing commas in function-
+    # call argument lists, introduced by firebase-ios-sdk 12.13.0). The
+    # setup-ios v1 action's @main ref defaults to 16.2; overriding here keeps
+    # the toolchain bump scoped to this Tests workflow and doesn't change
+    # behavior for the deploy/release/build paths that share the same action.
     - name: Setup iOS
       uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@main
-    
+      with:
+        xcode-version: '26.2'
+
     # If running tests fails, sometimes it's because of scheme name is wrong. This gives us all available schemes.
     - name: Get XCode schemes 
       run: xcrun xcodebuild -list
