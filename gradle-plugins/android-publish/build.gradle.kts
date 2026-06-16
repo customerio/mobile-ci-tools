@@ -2,11 +2,15 @@ plugins {
     `kotlin-dsl`
     `maven-publish`
     signing
+    // Used to publish THIS plugin to the Sonatype Central Portal (close + release), the same way
+    // the convention applies it to consumer projects.
+    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
 }
 
 group = "io.customer.android"
-// Plugin version — bump only when the publishing logic itself changes (historically ~once/year).
-version = System.getenv("MODULE_VERSION") ?: "0.1.0"
+// Single source of truth for the plugin version. Bumping this line in a PR is what triggers a
+// release (see RELEASING.md) — bump only when the publishing logic changes (historically ~once/year).
+version = providers.gradleProperty("pluginVersion").get()
 
 repositories {
     gradlePluginPortal()
@@ -25,17 +29,46 @@ dependencies {
 //   io.customer.android.publish-root.gradle.kts    -> id "io.customer.android.publish-root"
 //   io.customer.android.publish-module.gradle.kts  -> id "io.customer.android.publish-module"
 
-// Bootstrap: this plugin publishes itself with plain maven-publish (it cannot apply itself the
-// first time). CI injects the same Sonatype/signing env vars used by the module convention.
+// Maven Central requires complete POM metadata on every published artifact, including the
+// auto-generated plugin-marker publications.
 publishing {
-    repositories {
-        maven {
-            name = "sonatypeStaging"
-            url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
-            credentials {
-                username = System.getenv("OSSRH_USERNAME")
-                password = System.getenv("OSSRH_PASSWORD")
+    publications.withType<MavenPublication>().configureEach {
+        pom {
+            name.set("Customer.io Android Publishing Plugin")
+            description.set("Shared in-house Gradle convention for publishing Customer.io Android artifacts to Maven Central.")
+            url.set("https://github.com/customerio/mobile-ci-tools")
+            licenses {
+                license {
+                    name.set("MIT")
+                    url.set("https://github.com/customerio/mobile-ci-tools/blob/main/LICENSE")
+                }
             }
+            developers {
+                developer {
+                    id.set("customerio")
+                    name.set("Customer.io Team")
+                    email.set("win@customer.io")
+                }
+            }
+            scm {
+                url.set("https://github.com/customerio/mobile-ci-tools")
+                connection.set("scm:git@github.com:customerio/mobile-ci-tools.git")
+                developerConnection.set("scm:git@github.com:customerio/mobile-ci-tools.git")
+            }
+        }
+    }
+}
+
+// Sonatype Central Portal staging. `publishToSonatype closeAndReleaseSonatypeStagingRepository`
+// uploads and promotes to Maven Central in one shot.
+nexusPublishing {
+    repositories {
+        sonatype {
+            username.set(System.getenv("OSSRH_USERNAME") ?: "")
+            password.set(System.getenv("OSSRH_PASSWORD") ?: "")
+            stagingProfileId.set(System.getenv("SONATYPE_STAGING_PROFILE_ID") ?: "")
+            nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
+            snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
         }
     }
 }

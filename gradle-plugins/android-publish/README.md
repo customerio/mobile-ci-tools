@@ -56,6 +56,12 @@ For local development before the plugin is published, consume it as an included 
 includeBuild("../mobile-ci-tools/gradle-plugins/android-publish")
 ```
 
+## Releasing
+
+The plugin is published to Maven Central by bumping `pluginVersion` in `gradle.properties`; merging
+to `main` then auto-publishes and tags. See **[RELEASING.md](./RELEASING.md)** for the full process,
+the over-release guards, and why we don't use semantic-release here.
+
 ## Environment variables (publishing)
 
 `MODULE_VERSION`, `OSSRH_USERNAME`, `OSSRH_PASSWORD`, `SONATYPE_STAGING_PROFILE_ID`,
