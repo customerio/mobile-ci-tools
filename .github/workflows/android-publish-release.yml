@@ -32,6 +32,11 @@ on:
 permissions:
   contents: write # create + push the release tag
 
+# Serialize runs so two near-simultaneous pushes with the same untagged version can't both publish.
+concurrency:
+  group: android-publish-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -62,6 +67,15 @@ jobs:
           version="${{ steps.ver.outputs.version }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             action="${{ inputs.mode }}"
+            # Guard against a mode that doesn't match the version shape.
+            if [ "$action" = "snapshot" ] && [[ "$version" != *-SNAPSHOT ]]; then
+              echo "::error::snapshot mode requires a -SNAPSHOT pluginVersion (got $version)."
+              exit 1
+            fi
+            if [ "$action" = "close" ] && [[ "$version" == *-SNAPSHOT ]]; then
+              echo "::error::close mode requires a non-SNAPSHOT pluginVersion (got $version)."
+              exit 1
+            fi
           elif [[ "$version" == *-SNAPSHOT ]]; then
             echo "push with SNAPSHOT version ($version) — inert, nothing to release."
             action="none"

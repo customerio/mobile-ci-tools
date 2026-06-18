@@ -17,21 +17,27 @@ extra["signing.keyId"] = System.getenv("SIGNING_KEY_ID") ?: ""
 extra["signing.password"] = System.getenv("SIGNING_PASSWORD") ?: ""
 extra["signing.key"] = System.getenv("SIGNING_KEY") ?: ""
 
-val ossrhUsername = System.getenv("OSSRH_USERNAME") ?: ""
-val ossrhPassword = System.getenv("OSSRH_PASSWORD") ?: ""
-val sonatypeStagingProfileId = System.getenv("SONATYPE_STAGING_PROFILE_ID") ?: ""
+extra["ossrhUsername"] = System.getenv("OSSRH_USERNAME") ?: ""
+extra["ossrhPassword"] = System.getenv("OSSRH_PASSWORD") ?: ""
+extra["sonatypeStagingProfileId"] = System.getenv("SONATYPE_STAGING_PROFILE_ID") ?: ""
 
 val publishVersion = if (isDevelopment) "local" else (System.getenv("MODULE_VERSION") ?: "")
 extra["PUBLISH_VERSION"] = publishVersion
 version = publishVersion
 
-// Allow overriding any of the above from local.properties (keys like `signing.keyId`, etc.).
+// Allow overriding any of the above from local.properties (keys like `ossrhUsername`,
+// `signing.keyId`, etc.). Must happen before the credentials below are read.
 val secretPropsFile = rootProject.file("local.properties")
 if (secretPropsFile.exists()) {
     val props = java.util.Properties()
     secretPropsFile.inputStream().use { props.load(it) }
     props.forEach { (name, value) -> extra[name.toString()] = value }
 }
+
+// Resolved from extra AFTER the local.properties override so the override takes effect.
+val ossrhUsername = (extra["ossrhUsername"] as? String).orEmpty()
+val ossrhPassword = (extra["ossrhPassword"] as? String).orEmpty()
+val sonatypeStagingProfileId = (extra["sonatypeStagingProfileId"] as? String).orEmpty()
 
 nexusPublishing {
     repositories {
