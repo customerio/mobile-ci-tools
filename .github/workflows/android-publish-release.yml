@@ -79,8 +79,9 @@ jobs:
           elif [[ "$version" == *-SNAPSHOT ]]; then
             echo "push with SNAPSHOT version ($version) — inert, nothing to release."
             action="none"
-          elif git rev-parse "android-publish-v$version" >/dev/null 2>&1; then
-            echo "Tag android-publish-v$version already exists — nothing to release."
+          elif git ls-remote --exit-code --tags origin "refs/tags/android-publish-v$version" >/dev/null 2>&1; then
+            # Query the remote directly so the idempotency check never depends on what was fetched locally.
+            echo "Tag android-publish-v$version already exists on remote — nothing to release."
             action="none"
           else
             action="release"
