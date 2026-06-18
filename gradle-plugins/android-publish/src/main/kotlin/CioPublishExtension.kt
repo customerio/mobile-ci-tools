@@ -5,6 +5,9 @@
  * (e.g. jist) override [artifactId], [description], and [url].
  */
 open class CioPublishExtension {
+    /** Maven groupId. Defaults to the verified `io.customer.android` namespace. */
+    var group: String = "io.customer.android"
+
     /** Maven artifactId. Defaults to the Gradle project name when null. */
     var artifactId: String? = null
 

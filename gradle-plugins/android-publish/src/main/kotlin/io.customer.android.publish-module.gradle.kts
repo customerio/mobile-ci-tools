@@ -14,14 +14,19 @@ plugins {
 
 val cioPublish = extensions.create("customerIoPublish", CioPublishExtension::class.java)
 
-val publishGroupId = (findProperty("PUBLISH_GROUP_ID") as String?) ?: "io.customer.android"
 val isDevelopment = (rootProject.extra.properties["IS_DEVELOPMENT"] as? Boolean)
     ?: (System.getenv("IS_DEVELOPMENT") == "true")
 val publishVersion = (rootProject.extra.properties["PUBLISH_VERSION"] as? String)
     ?: if (isDevelopment) "local" else (System.getenv("MODULE_VERSION") ?: "")
 
-group = publishGroupId
 version = publishVersion
+
+// Match customerio-android's generated docs: separate inherited members in the dokka output.
+tasks.withType<org.jetbrains.dokka.gradle.DokkaTaskPartial>().configureEach {
+    pluginsMapConfiguration.set(
+        mapOf("org.jetbrains.dokka.base.DokkaBase" to """{ "separateInheritedMembers": true }"""),
+    )
+}
 
 // To speed up local development builds, dokka (javadoc) is only attached for real releases.
 val javadocJar by tasks.registering(Jar::class) {
@@ -32,6 +37,10 @@ val javadocJar by tasks.registering(Jar::class) {
 }
 
 afterEvaluate {
+    // Resolved after the consumer has configured the extension.
+    val publishGroupId = cioPublish.group
+    group = publishGroupId
+
     publishing {
         publications {
             create<MavenPublication>("release") {

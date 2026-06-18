@@ -36,7 +36,10 @@ if (secretPropsFile.exists()) {
 nexusPublishing {
     repositories {
         sonatype {
-            stagingProfileId.set(sonatypeStagingProfileId)
+            // Optional: when unset, the plugin auto-detects the profile for the namespace.
+            if (sonatypeStagingProfileId.isNotBlank()) {
+                stagingProfileId.set(sonatypeStagingProfileId)
+            }
             username.set(ossrhUsername)
             password.set(ossrhPassword)
             nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))

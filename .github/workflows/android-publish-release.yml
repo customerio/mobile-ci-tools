@@ -1,18 +1,33 @@
 name: Release android-publish plugin
 
-# Automated release of the io.customer.android:android-publish Gradle plugin to Maven Central.
+# Publishes the io.customer.android:android-publish Gradle plugin to Maven Central.
 #
-# Trigger + guards (see gradle-plugins/android-publish/RELEASING.md):
-#   1. paths filter  — only runs when the plugin itself changes (never for CI/action-only commits).
-#   2. tag idempotency — only publishes when gradle.properties `pluginVersion` is a version that
-#      hasn't been released yet (i.e. no android-publish-v<version> tag). A plugin-dir change that
-#      doesn't bump the version (a comment, a test) is a no-op.
-# Net: the only human action is bumping `pluginVersion` in the PR; everything else is automatic.
+# Automatic release (push to main): only when `pluginVersion` is a non-SNAPSHOT value that hasn't
+# been tagged yet. Guards against over-releasing (see gradle-plugins/android-publish/RELEASING.md):
+#   - paths filter: never fires on CI/action-only commits.
+#   - SNAPSHOT versions are inert on push (merging this PR releases nothing).
+#   - tag idempotency: a plugin change that doesn't bump the version is a no-op.
+#
+# Manual test lanes (workflow_dispatch → mode):
+#   - dry-run : print the publish task graph, upload nothing (no secrets needed).
+#   - snapshot: publish a SNAPSHOT to the snapshot repo (real upload, never released).
+#   - close   : publish + close the staging repo (validates a release-shaped version) without
+#               releasing — drop it afterwards in the Central Portal.
 on:
   push:
     branches: [main]
     paths:
       - 'gradle-plugins/android-publish/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Test mode (real releases happen automatically on push for a non-SNAPSHOT, untagged version)"
+        type: choice
+        options:
+          - dry-run
+          - snapshot
+          - close
+        default: dry-run
 
 permissions:
   contents: write # create + push the release tag
@@ -20,48 +35,70 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Reuse the same secret names customerio-android uses, mapped to the env vars the build reads.
+      OSSRH_USERNAME: ${{ secrets.GRADLE_PUBLISH_USERNAME }}
+      OSSRH_PASSWORD: ${{ secrets.GRADLE_PUBLISH_PASSWORD }}
+      SONATYPE_STAGING_PROFILE_ID: ${{ secrets.SONATYPE_STAGING_PROFILE_ID }}
+      SIGNING_KEY_ID: ${{ secrets.GRADLE_SIGNING_KEYID }}
+      SIGNING_KEY: ${{ secrets.GRADLE_SIGNING_PRIVATE_KEY }}
+      SIGNING_PASSWORD: ${{ secrets.GRADLE_SIGNING_PASSPHRASE }}
     defaults:
       run:
         working-directory: gradle-plugins/android-publish
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # need full history/tags for the idempotency check
+          fetch-depth: 0 # full history/tags for the idempotency check
 
       - name: Read plugin version
         id: ver
         run: echo "version=$(grep '^pluginVersion=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
-      - name: Decide whether to release
+      - name: Decide action
         id: gate
         working-directory: .
         run: |
-          tag="android-publish-v${{ steps.ver.outputs.version }}"
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists — nothing to release."
-            echo "release=false" >> "$GITHUB_OUTPUT"
+          version="${{ steps.ver.outputs.version }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            action="${{ inputs.mode }}"
+          elif [[ "$version" == *-SNAPSHOT ]]; then
+            echo "push with SNAPSHOT version ($version) — inert, nothing to release."
+            action="none"
+          elif git rev-parse "android-publish-v$version" >/dev/null 2>&1; then
+            echo "Tag android-publish-v$version already exists — nothing to release."
+            action="none"
           else
-            echo "Releasing $tag"
-            echo "release=true" >> "$GITHUB_OUTPUT"
+            action="release"
+          fi
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+          echo "Resolved action: $action (version $version)"
+          if [ "$action" != "none" ] && [ "$action" != "dry-run" ] && [ -z "$OSSRH_USERNAME" ]; then
+            echo "::notice::Publishing credentials not set — publish step will be skipped."
           fi
 
       - name: Setup Android
-        if: steps.gate.outputs.release == 'true'
+        if: steps.gate.outputs.action != 'none'
         uses: ./github-actions/android/setup-android/v1
 
-      - name: Publish to Maven Central
-        if: steps.gate.outputs.release == 'true'
-        env:
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          SONATYPE_STAGING_PROFILE_ID: ${{ secrets.SONATYPE_STAGING_PROFILE_ID }}
-          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+      - name: Publish (dry-run)
+        if: steps.gate.outputs.action == 'dry-run'
+        run: ./gradlew publishToSonatype --dry-run
+
+      - name: Publish snapshot
+        if: ${{ steps.gate.outputs.action == 'snapshot' && env.OSSRH_USERNAME != '' }}
+        run: ./gradlew publishToSonatype
+
+      - name: Publish + close (release rehearsal — not released)
+        if: ${{ steps.gate.outputs.action == 'close' && env.OSSRH_USERNAME != '' }}
+        run: ./gradlew publishToSonatype closeSonatypeStagingRepository
+
+      - name: Publish + release
+        if: ${{ steps.gate.outputs.action == 'release' && env.OSSRH_USERNAME != '' }}
         run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository
 
       - name: Tag the release
-        if: steps.gate.outputs.release == 'true'
+        if: ${{ steps.gate.outputs.action == 'release' && env.OSSRH_USERNAME != '' }}
         working-directory: .
         run: |
           tag="android-publish-v${{ steps.ver.outputs.version }}"

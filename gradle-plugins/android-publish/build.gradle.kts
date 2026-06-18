@@ -66,7 +66,10 @@ nexusPublishing {
         sonatype {
             username.set(System.getenv("OSSRH_USERNAME") ?: "")
             password.set(System.getenv("OSSRH_PASSWORD") ?: "")
-            stagingProfileId.set(System.getenv("SONATYPE_STAGING_PROFILE_ID") ?: "")
+            // Optional: when unset, the plugin auto-detects the profile for the namespace.
+            System.getenv("SONATYPE_STAGING_PROFILE_ID")?.takeIf { it.isNotBlank() }?.let {
+                stagingProfileId.set(it)
+            }
             nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
             snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
         }
