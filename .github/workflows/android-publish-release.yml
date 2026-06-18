@@ -65,6 +65,11 @@ jobs:
         working-directory: .
         run: |
           version="${{ steps.ver.outputs.version }}"
+          # Fail fast on a missing/empty version so we never publish or tag an empty version.
+          if [ -z "$version" ]; then
+            echo "::error::pluginVersion not found in gradle.properties."
+            exit 1
+          fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             action="${{ inputs.mode }}"
             # Guard against a mode that doesn't match the version shape.
@@ -79,12 +84,20 @@ jobs:
           elif [[ "$version" == *-SNAPSHOT ]]; then
             echo "push with SNAPSHOT version ($version) — inert, nothing to release."
             action="none"
-          elif git ls-remote --exit-code --tags origin "refs/tags/android-publish-v$version" >/dev/null 2>&1; then
-            # Query the remote directly so the idempotency check never depends on what was fetched locally.
-            echo "Tag android-publish-v$version already exists on remote — nothing to release."
-            action="none"
           else
-            action="release"
+            # Query the remote directly so the idempotency check never depends on what was fetched
+            # locally. Distinguish "tag exists" (rc 0) / "absent" (rc 2) / error (anything else) so a
+            # transient network/auth failure aborts instead of re-releasing an existing version.
+            git ls-remote --exit-code --tags origin "refs/tags/android-publish-v$version" >/dev/null 2>&1 && rc=0 || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              echo "Tag android-publish-v$version already exists on remote — nothing to release."
+              action="none"
+            elif [ "$rc" -eq 2 ]; then
+              action="release"
+            else
+              echo "::error::git ls-remote failed (exit $rc) — aborting to avoid a duplicate release."
+              exit 1
+            fi
           fi
           echo "action=$action" >> "$GITHUB_OUTPUT"
           echo "Resolved action: $action (version $version)"
