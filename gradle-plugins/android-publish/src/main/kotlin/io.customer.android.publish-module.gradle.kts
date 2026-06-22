@@ -6,6 +6,8 @@
  * customerio-android's `scripts/publish-module.gradle`. Requires the root project to apply
  * `io.customer.android.publish-root` (for credentials + Sonatype staging).
  */
+import org.gradle.api.publish.maven.tasks.AbstractPublishToMaven
+
 plugins {
     `maven-publish`
     signing
@@ -20,6 +22,16 @@ val publishVersion = (rootProject.extra.properties["PUBLISH_VERSION"] as? String
     ?: if (isDevelopment) "local" else (System.getenv("MODULE_VERSION") ?: "")
 
 version = publishVersion
+
+// Fail a *publish* (not other builds) when a non-dev release has no version, so an empty-version
+// GAV is never pushed toward Maven Central. Configuration of non-publishing tasks is unaffected.
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    doFirst {
+        check(isDevelopment || publishVersion.isNotBlank()) {
+            "Refusing to publish ${project.path}: version is empty. Set MODULE_VERSION (or IS_DEVELOPMENT=true for a local install)."
+        }
+    }
+}
 
 // Match customerio-android's generated docs: separate inherited members in the dokka output.
 tasks.withType<org.jetbrains.dokka.gradle.DokkaTaskPartial>().configureEach {
@@ -77,9 +89,12 @@ afterEvaluate {
                         }
                     }
                     scm {
+                        // Host-agnostic `scm:git:<url>.git` form so a non-GitHub url can't produce
+                        // a malformed connection (the previous github.com-specific derivation fell
+                        // back to the full url when the host didn't match).
                         url.set(cioPublish.url)
-                        connection.set("scm:git@github.com:${cioPublish.url.substringAfter("github.com/")}.git")
-                        developerConnection.set("scm:git@github.com:${cioPublish.url.substringAfter("github.com/")}.git")
+                        connection.set("scm:git:${cioPublish.url}.git")
+                        developerConnection.set("scm:git:${cioPublish.url}.git")
                     }
                 }
             }
