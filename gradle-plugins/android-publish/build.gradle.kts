@@ -18,6 +18,12 @@ repositories {
     mavenCentral()
 }
 
+// Maven Central requires a -sources.jar and -javadoc.jar for the published plugin artifact.
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
 dependencies {
     // The convention scripts apply these plugins, so their markers must be on the classpath.
     // Both are pinned, in-house-reviewed versions — see README for the supply-chain rationale.
