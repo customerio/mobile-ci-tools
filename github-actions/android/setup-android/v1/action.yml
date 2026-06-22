@@ -1,0 +1,32 @@
+name: Setup Android
+description: Setup CI with Android development tools to compile, test, and publish Android source code.
+
+inputs:
+  gradle-version:
+    description: 'Gradle version to use'
+    required: false
+    default: '8.14'
+  java-version:
+    description: 'Java version to install'
+    required: false
+    default: '17'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Java
+      uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+      with:
+        distribution: 'zulu'
+        java-version: ${{ inputs.java-version }}
+
+    - name: Install Android SDK
+      uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+
+    - name: Verify Gradle scripts are valid
+      uses: gradle/actions/wrapper-validation@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.3.1
+
+    - name: Setup Gradle and cache dependencies
+      uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.3.1
+      with:
+        gradle-version: ${{ inputs.gradle-version }}

@@ -1,0 +1,28 @@
+name: android-publish plugin CI
+
+# Build + validate the publishing plugin on every change to it, so breaking changes are caught on
+# the PR rather than at release time or in a consumer (jist / customerio-android).
+on:
+  pull_request:
+    paths:
+      - 'gradle-plugins/android-publish/**'
+  push:
+    branches: [main]
+    paths:
+      - 'gradle-plugins/android-publish/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gradle-plugins/android-publish
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Android
+        uses: ./github-actions/android/setup-android/v1
+
+      # `build` compiles the precompiled script plugins + runs validatePlugins;
+      # `publishToMavenLocal` also exercises the publication/POM wiring.
+      - run: ./gradlew build publishToMavenLocal
