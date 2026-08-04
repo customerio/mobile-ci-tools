@@ -3,6 +3,16 @@ name: iOS Tests
 on:
   workflow_call:
     inputs:
+      runner-label:
+        description: 'Runner label to run on (e.g. macos-26, xcode-27).'
+        required: false
+        type: string
+        default: 'macos-26'
+      xcode-version:
+        description: 'Xcode version to select. Leave empty on preview images (xcode-27) where only one Xcode is installed.'
+        required: false
+        type: string
+        default: '26.6'
       scheme:
         description: 'Xcode scheme name to test'
         required: true
@@ -15,10 +25,33 @@ on:
       CODECOV_UPLOAD_TOKEN:
         description: 'Codecov upload token'
         required: false
+  # Mirrored so the runner and Xcode selection can be exercised from the Actions tab without a
+  # consumer PR. Note the test steps need an Xcode project checked out, so a dispatch run in
+  # mobile-ci-tools reports the toolchain and then fails at `xcodebuild -list` — that is expected.
+  workflow_dispatch:
+    inputs:
+      runner-label:
+        description: 'Runner label to run on (e.g. macos-26, xcode-27).'
+        required: false
+        type: string
+        default: 'macos-26'
+      xcode-version:
+        description: 'Xcode version to select. Leave empty on preview images (xcode-27) where only one Xcode is installed.'
+        required: false
+        type: string
+        default: '26.6'
+      scheme:
+        description: 'Xcode scheme name to test'
+        required: true
+        type: string
+      xcresult-name:
+        description: 'Name of the xcresult bundle (e.g., "MyApp.xcresult")'
+        required: true
+        type: string
 
 jobs:
   automated-tests:
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner-label }}
     permissions:
       checks: write # Need write permission to add test result check.
     env:
@@ -26,16 +59,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Xcode 26.2 (Swift 6.2) is required so SPM can parse modern dependency
-    # manifests that use Swift 6.1+ syntax (e.g. trailing commas in function-
-    # call argument lists, introduced by firebase-ios-sdk 12.13.0). The
-    # setup-ios v1 action's @main ref defaults to 16.2; overriding here keeps
-    # the toolchain bump scoped to this Tests workflow and doesn't change
-    # behavior for the deploy/release/build paths that share the same action.
+    # An empty xcode-version is passed through deliberately: the action skips selecting an
+    # Xcode in that case, which is required on preview images such as xcode-27 where a single
+    # beta Xcode is installed and setup-xcode cannot resolve the version string.
     - name: Setup iOS
-      uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@main
+      uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@macos-26
       with:
-        xcode-version: '26.2'
+        xcode-version: ${{ inputs.xcode-version }}
 
     # If running tests fails, sometimes it's because of scheme name is wrong. This gives us all available schemes.
     - name: Get XCode schemes 

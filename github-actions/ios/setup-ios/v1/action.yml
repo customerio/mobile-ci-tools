@@ -3,16 +3,21 @@ description: Setup CI with iOS development tools to compile and test iOS source 
 
 inputs:
   xcode-version:
-    description: 'Xcode version to install'
+    description: 'Xcode version to select. Leave empty to use the image default (required on preview images such as xcode-27, where setup-xcode cannot resolve a beta string).'
     required: false
-    default: '16.2'
+    default: '26.6'
 
 runs:
   using: "composite"
   steps:
-  - name: Install XCode 
+  # Deliberately no simulator-runtime install step here, unlike the MacOS-15+iOS-26 and
+  # MacOS-26+iOS-26 branches. The macos-26 image already ships the iOS 26.2 / 26.4 / 26.5
+  # simulator runtimes, so that step was a ~200s no-op at best and a fetch of an unused
+  # runtime at worst. A job that genuinely needs a runtime the image lacks should now fail
+  # loudly rather than quietly fetch it. See images/macos/macos-26-arm64-Readme.md in
+  # actions/runner-images for the bundled list.
+  - name: Install XCode
+    if: ${{ inputs.xcode-version != '' }}
     uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
     with:
       xcode-version: ${{ inputs.xcode-version }}
-
-
