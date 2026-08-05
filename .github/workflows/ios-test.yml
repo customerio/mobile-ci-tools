@@ -63,7 +63,7 @@ jobs:
     # Xcode in that case, which is required on preview images such as xcode-27 where a single
     # beta Xcode is installed and setup-xcode cannot resolve the version string.
     - name: Setup iOS
-      uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@macos-26
+      uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@main
       with:
         xcode-version: ${{ inputs.xcode-version }}
 
