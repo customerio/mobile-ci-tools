@@ -8,16 +8,6 @@ on:
         required: false
         type: string
         default: 'macos-26'
-  # Mirrored so the runner can be exercised from the Actions tab without a consumer PR.
-  # Note the lint steps themselves need a Swift repo checked out, so a dispatch run in
-  # mobile-ci-tools reports the runner and then fails at `make format` — that is expected.
-  workflow_dispatch:
-    inputs:
-      runner-label:
-        description: 'Runner label to run on (e.g. macos-26, xcode-27).'
-        required: false
-        type: string
-        default: 'macos-26'
 
 jobs:
   format-and-lint:
@@ -27,12 +17,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install binny to run lint tools
-        # Uses the arm64 asset rather than binny-macos-x86_64. Every macOS runner image is
-        # arm64; the x86_64 binary only worked because Rosetta 2 happened to be present on
-        # macos-14. Rosetta availability on macos-26 is not documented in the image readme,
-        # so depend on the native binary instead of on an undocumented shim.
+        # arm64 asset, not x86_64: every macOS image is arm64, and the x86_64 binary only ran
+        # because Rosetta happened to be installed on macos-14. -f so a 404 fails here rather
+        # than writing an error page to ./binny and failing later inside `make format`.
         run: |
-          curl -L --output binny https://github.com/customerio/binny/releases/download/latest/binny-macos-m1
+          curl -fL --output binny https://github.com/customerio/binny/releases/download/latest/binny-macos-m1
           chmod +x binny
         shell: bash
 

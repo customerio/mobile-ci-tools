@@ -25,29 +25,6 @@ on:
       CODECOV_UPLOAD_TOKEN:
         description: 'Codecov upload token'
         required: false
-  # Mirrored so the runner and Xcode selection can be exercised from the Actions tab without a
-  # consumer PR. Note the test steps need an Xcode project checked out, so a dispatch run in
-  # mobile-ci-tools reports the toolchain and then fails at `xcodebuild -list` — that is expected.
-  workflow_dispatch:
-    inputs:
-      runner-label:
-        description: 'Runner label to run on (e.g. macos-26, xcode-27).'
-        required: false
-        type: string
-        default: 'macos-26'
-      xcode-version:
-        description: 'Xcode version to select. Leave empty on preview images (xcode-27) where only one Xcode is installed.'
-        required: false
-        type: string
-        default: '26.6'
-      scheme:
-        description: 'Xcode scheme name to test'
-        required: true
-        type: string
-      xcresult-name:
-        description: 'Name of the xcresult bundle (e.g., "MyApp.xcresult")'
-        required: true
-        type: string
 
 jobs:
   automated-tests:
@@ -59,9 +36,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # An empty xcode-version is passed through deliberately: the action skips selecting an
-    # Xcode in that case, which is required on preview images such as xcode-27 where a single
-    # beta Xcode is installed and setup-xcode cannot resolve the version string.
+    # Xcode 26.x is a floor, not a preference: SPM needs Swift 6.1+ to parse firebase-ios-sdk's
+    # manifest (trailing commas in call argument lists). Do not lower the default below 26.
     - name: Setup iOS
       uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@main
       with:
