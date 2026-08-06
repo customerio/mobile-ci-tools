@@ -2,24 +2,33 @@ name: iOS Lint
 
 on:
   workflow_call:
+    inputs:
+      runner-label:
+        description: 'Runner label to run on (e.g. macos-26, xcode-27).'
+        required: false
+        type: string
+        default: 'macos-26'
 
 jobs:
   format-and-lint:
     name: Assert that code has been linted and formatted
-    runs-on: macos-14
+    runs-on: ${{ inputs.runner-label }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install binny to run lint tools 
+
+      - name: Install binny to run lint tools
+        # arm64 asset, not x86_64: every macOS image is arm64, and the x86_64 binary only ran
+        # because Rosetta happened to be installed on macos-14. -f so a 404 fails here rather
+        # than writing an error page to ./binny and failing later inside `make format`.
         run: |
-          curl -L --output binny https://github.com/customerio/binny/releases/download/latest/binny-macos-x86_64
-          chmod +x binny 
+          curl -fL --output binny https://github.com/customerio/binny/releases/download/latest/binny-macos-m1
+          chmod +x binny
         shell: bash
-        
-      - name: Run swiftformat. Fail if any errors. 
+
+      - name: Run swiftformat. Fail if any errors.
         run: make format && git diff --exit-code
         shell: bash
-        
-      - name: Run swiftlint. Fail if any errors. 
+
+      - name: Run swiftlint. Fail if any errors.
         run: make lint
         shell: bash

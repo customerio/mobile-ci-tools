@@ -3,16 +3,17 @@ description: Setup CI with iOS development tools to compile and test iOS source 
 
 inputs:
   xcode-version:
-    description: 'Xcode version to install'
+    description: 'Xcode version to select, e.g. "26.6". Leave empty only to deliberately use the image default — required on preview images such as xcode-27, where a single beta Xcode is installed and setup-xcode cannot resolve the version string.'
     required: false
-    default: '16.2'
+    default: '26.6'
 
 runs:
   using: "composite"
   steps:
-  - name: Install XCode 
+  # No `xcodebuild -downloadPlatform iOS` step: the macos-26 image already ships the iOS
+  # simulator runtimes we test against, so it only ever fetched one no job used.
+  - name: Install XCode
+    if: ${{ inputs.xcode-version != '' }}
     uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
     with:
       xcode-version: ${{ inputs.xcode-version }}
-
-
