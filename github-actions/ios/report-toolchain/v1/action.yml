@@ -1,0 +1,43 @@
+name: Report iOS toolchain
+description: Record the hosted Apple toolchain and optionally require Xcode and iOS SDK major versions.
+
+inputs:
+  expected-xcode-major:
+    description: Expected Xcode major version. Leave empty to report without a version assertion.
+    required: false
+    default: ''
+  expected-ios-sdk-major:
+    description: Expected iphoneos and iphonesimulator SDK major version. Leave empty to report without a version assertion.
+    required: false
+    default: ''
+
+outputs:
+  classification:
+    description: reported-toolchain, verified-toolchain, or toolchain-mismatch.
+    value: ${{ steps.report.outputs.classification }}
+  image-version:
+    description: Hosted runner image version.
+    value: ${{ steps.report.outputs.image-version }}
+  xcode-version:
+    description: Selected Xcode version.
+    value: ${{ steps.report.outputs.xcode-version }}
+  xcode-build:
+    description: Selected Xcode build identifier.
+    value: ${{ steps.report.outputs.xcode-build }}
+  iphoneos-sdk:
+    description: Selected iphoneos SDK version.
+    value: ${{ steps.report.outputs.iphoneos-sdk }}
+  iphonesimulator-sdk:
+    description: Selected iphonesimulator SDK version.
+    value: ${{ steps.report.outputs.iphonesimulator-sdk }}
+
+runs:
+  using: composite
+  steps:
+    - name: Report and verify Apple toolchain
+      id: report
+      shell: bash
+      env:
+        EXPECTED_XCODE_MAJOR: ${{ inputs.expected-xcode-major }}
+        EXPECTED_IOS_SDK_MAJOR: ${{ inputs.expected-ios-sdk-major }}
+      run: bash "$GITHUB_ACTION_PATH/report.sh"
