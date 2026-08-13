@@ -13,6 +13,16 @@ on:
         required: false
         type: string
         default: '26.6'
+      ruby-version:
+        description: 'Ruby version to install for Fastlane. Must match what the calling repo''s Gemfile.lock resolves against.'
+        required: false
+        # Transitional default. A caller's Gemfile.lock is resolved against one Ruby line, and a
+        # lock resolved on 3.4 will not install on 3.2 (fastlane 2.237 admits excon 1.7, which
+        # needs >= 3.3). Keeping 3.2 here means merging this change alone is a no-op; each caller
+        # moves to '3.4' in the same PR that bumps its own lock. Drop this default once both
+        # customerio-ios and customerio-ios-fcm pass the input explicitly.
+        type: string
+        default: '3.2'
       scheme:
         description: 'Xcode scheme name to test'
         required: true
@@ -50,7 +60,7 @@ jobs:
     - name: Setup Ruby to run Fastlane 
       uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
       with:
-        ruby-version: '3.4'
+        ruby-version: ${{ inputs.ruby-version }}
         bundler-cache: true # install dependencies in Gemfile, including Fastlane.
 
     - name: Run tests 
