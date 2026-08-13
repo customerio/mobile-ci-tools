@@ -104,6 +104,16 @@ if run_report inspection-failure EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=
 fi
 grep -qx 'classification=toolchain-mismatch' "$temporary_root/inspection-failure/output"
 
+if run_report noisy-sdk EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27 STUB_IPHONEOS_SDK=$'warning\n27.0'; then
+  echo "Expected multiline SDK output to fail closed." >&2
+  exit 1
+fi
+grep -qx 'classification=toolchain-mismatch' "$temporary_root/noisy-sdk/output"
+if grep -qx '27.0' "$temporary_root/noisy-sdk/output"; then
+  echo "Multiline command output injected a GitHub output line." >&2
+  exit 1
+fi
+
 if run_report xcodebuild-failure EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27 STUB_XCODEBUILD_FAIL=true; then
   echo "Expected xcodebuild inspection failure to fail closed." >&2
   exit 1

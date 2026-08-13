@@ -27,7 +27,7 @@ jobs:
           done
 
       - name: Run shellcheck
-        run: shellcheck github-actions/ios/report-toolchain/v1/report.sh github-actions/ios/report-toolchain/v1/test.sh
+        run: shellcheck github-actions/ios/report-toolchain/v1/*.sh
 
       - name: Test toolchain reporter
         run: bash github-actions/ios/report-toolchain/v1/test.sh
@@ -39,3 +39,19 @@ jobs:
 
       - name: Test with the macOS system Bash
         run: /bin/bash github-actions/ios/report-toolchain/v1/test.sh
+
+      - name: Smoke-test the composite action on the hosted toolchain
+        id: reporter
+        uses: ./github-actions/ios/report-toolchain/v1
+
+      - name: Verify composite outputs
+        env:
+          CLASSIFICATION: ${{ steps.reporter.outputs.classification }}
+          XCODE_VERSION: ${{ steps.reporter.outputs.xcode-version }}
+          IPHONEOS_SDK: ${{ steps.reporter.outputs.iphoneos-sdk }}
+          IPHONESIMULATOR_SDK: ${{ steps.reporter.outputs.iphonesimulator-sdk }}
+        run: |
+          test "$CLASSIFICATION" = 'reported-toolchain'
+          test -n "$XCODE_VERSION"
+          test -n "$IPHONEOS_SDK"
+          test -n "$IPHONESIMULATOR_SDK"

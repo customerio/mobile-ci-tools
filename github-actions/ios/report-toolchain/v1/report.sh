@@ -13,8 +13,10 @@ for expected_major in "$expected_xcode_major" "$expected_ios_sdk_major"; do
 done
 
 write_output() {
+  local value="${2//$'\r'/ }"
+  value="${value//$'\n'/ }"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
+    printf '%s=%s\n' "$1" "$value" >> "$GITHUB_OUTPUT"
   fi
 }
 
@@ -79,10 +81,16 @@ actual_iphoneos_sdk="missing"
 if ! actual_iphoneos_sdk="$(xcrun --sdk iphoneos --show-sdk-version 2>&1)"; then
   record_mismatch "xcrun could not inspect the iphoneos SDK: $actual_iphoneos_sdk"
   actual_iphoneos_sdk="missing"
+elif [[ ! "$actual_iphoneos_sdk" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+  record_mismatch "xcrun returned an unrecognized iphoneos SDK version: $actual_iphoneos_sdk"
+  actual_iphoneos_sdk="missing"
 fi
 actual_simulator_sdk="missing"
 if ! actual_simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version 2>&1)"; then
   record_mismatch "xcrun could not inspect the iphonesimulator SDK: $actual_simulator_sdk"
+  actual_simulator_sdk="missing"
+elif [[ ! "$actual_simulator_sdk" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+  record_mismatch "xcrun returned an unrecognized iphonesimulator SDK version: $actual_simulator_sdk"
   actual_simulator_sdk="missing"
 fi
 runtime_output=""
