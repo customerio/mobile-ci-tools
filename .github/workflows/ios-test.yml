@@ -48,9 +48,9 @@ jobs:
       run: xcrun xcodebuild -list
 
     - name: Setup Ruby to run Fastlane 
-      uses: ruby/setup-ruby@354a1ad156761f5ee2b7b13fa8e09943a5e8d252 # v1.229.0
+      uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
       with:
-        ruby-version: '3.2'
+        ruby-version: '3.4'
         bundler-cache: true # install dependencies in Gemfile, including Fastlane.
 
     - name: Run tests 
