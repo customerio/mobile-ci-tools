@@ -1,5 +1,5 @@
 name: Report iOS toolchain
-description: Record the hosted Apple toolchain and optionally require Xcode and iOS SDK major versions.
+description: Record the hosted Apple toolchain on macOS and optionally require Xcode and iOS SDK major versions. Inspection failures always fail closed.
 
 inputs:
   expected-xcode-major:

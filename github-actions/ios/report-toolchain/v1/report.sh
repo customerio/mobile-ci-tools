@@ -25,7 +25,8 @@ write_summary() {
 }
 
 record_mismatch() {
-  mismatch_reasons+=("$1")
+  mismatch_reasons[mismatch_count]="$1"
+  mismatch_count=$((mismatch_count + 1))
 }
 
 version_major() {
@@ -38,8 +39,14 @@ version_major() {
 }
 
 mismatch_reasons=()
+mismatch_count=0
 actual_image_os="${ImageOS:-missing}"
 actual_image_version="${ImageVersion:-missing}"
+
+if [[ "$(uname -s 2>/dev/null || true)" != "Darwin" ]]; then
+  echo "report-toolchain requires a macOS runner" >&2
+  exit 2
+fi
 
 if ! actual_macos_version="$(sw_vers -productVersion 2>&1)"; then
   record_mismatch "sw_vers could not read the macOS version: $actual_macos_version"
@@ -132,13 +139,15 @@ write_summary "| Xcode | \`$actual_xcode_version ($actual_xcode_build)\` |"
 write_summary "| iphoneos SDK | \`$actual_iphoneos_sdk\` |"
 write_summary "| iphonesimulator SDK | \`$actual_simulator_sdk\` |"
 
-if (( ${#mismatch_reasons[@]} > 0 )); then
+if (( mismatch_count > 0 )); then
   write_output classification toolchain-mismatch
   write_summary ""
   write_summary "**Classification:** toolchain-mismatch"
   for reason in "${mismatch_reasons[@]}"; do
-    echo "::error title=Apple toolchain mismatch::$reason"
-    write_summary "- $reason"
+    normalized_reason="${reason//$'\r'/ }"
+    normalized_reason="${normalized_reason//$'\n'/ }"
+    echo "::error title=Apple toolchain mismatch::$normalized_reason"
+    write_summary "- $normalized_reason"
   done
   exit 1
 fi

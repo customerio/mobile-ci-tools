@@ -21,10 +21,21 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Check shell syntax
-        run: bash -n github-actions/ios/report-toolchain/v1/report.sh github-actions/ios/report-toolchain/v1/test.sh
+        run: |
+          for script in github-actions/ios/report-toolchain/v1/*.sh; do
+            bash -n "$script"
+          done
 
       - name: Run shellcheck
         run: shellcheck github-actions/ios/report-toolchain/v1/report.sh github-actions/ios/report-toolchain/v1/test.sh
 
       - name: Test toolchain reporter
         run: bash github-actions/ios/report-toolchain/v1/test.sh
+
+  macos-bash-tests:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Test with the macOS system Bash
+        run: /bin/bash github-actions/ios/report-toolchain/v1/test.sh

@@ -20,13 +20,24 @@ STUB
 
 cat > "$stub_bin/uname" <<'STUB'
 #!/usr/bin/env bash
-[[ "$1" == "-m" ]] || exit 2
-printf '%s\n' "${STUB_ARCHITECTURE:-arm64}"
+case "$1" in
+  -s) printf '%s\n' Darwin ;;
+  -m) printf '%s\n' "${STUB_ARCHITECTURE:-arm64}" ;;
+  *) exit 2 ;;
+esac
 STUB
 
 cat > "$stub_bin/xcodebuild" <<'STUB'
 #!/usr/bin/env bash
 [[ "$1" == "-version" ]] || exit 2
+if [[ "${STUB_XCODEBUILD_FAIL:-false}" == "true" ]]; then
+  echo "stubbed xcodebuild failure" >&2
+  exit 1
+fi
+if [[ "${STUB_XCODEBUILD_GARBAGE:-false}" == "true" ]]; then
+  echo "not an Xcode version"
+  exit 0
+fi
 printf 'Xcode %s\nBuild version %s\n' "${STUB_XCODE_VERSION:-27.0}" "${STUB_XCODE_BUILD:-27A5228h}"
 STUB
 
@@ -92,6 +103,20 @@ if run_report inspection-failure EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=
   exit 1
 fi
 grep -qx 'classification=toolchain-mismatch' "$temporary_root/inspection-failure/output"
+
+if run_report xcodebuild-failure EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27 STUB_XCODEBUILD_FAIL=true; then
+  echo "Expected xcodebuild inspection failure to fail closed." >&2
+  exit 1
+fi
+grep -qx 'classification=toolchain-mismatch' "$temporary_root/xcodebuild-failure/output"
+grep -Fq 'xcodebuild could not inspect' "$temporary_root/xcodebuild-failure/summary"
+
+if run_report xcodebuild-garbage EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27 STUB_XCODEBUILD_GARBAGE=true; then
+  echo "Expected unparseable xcodebuild output to fail closed." >&2
+  exit 1
+fi
+grep -qx 'classification=toolchain-mismatch' "$temporary_root/xcodebuild-garbage/output"
+grep -Fq 'xcodebuild returned an unrecognized version response' "$temporary_root/xcodebuild-garbage/summary"
 
 if run_report invalid-input EXPECTED_XCODE_MAJOR=twenty-seven EXPECTED_IOS_SDK_MAJOR=27; then
   echo "Expected invalid major input to fail." >&2
