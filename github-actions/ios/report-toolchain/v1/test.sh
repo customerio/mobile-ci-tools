@@ -48,6 +48,9 @@ if [[ "${STUB_XCRUN_FAIL:-false}" == "true" ]]; then
   exit 1
 fi
 if [[ "$1" == "--sdk" && "$3" == "--show-sdk-version" ]]; then
+  if [[ "${STUB_XCRUN_SDK_NOTE:-false}" == "true" ]]; then
+    echo "xcrun: note: using the selected SDK" >&2
+  fi
   case "$2" in
     iphoneos) printf '%s\n' "${STUB_IPHONEOS_SDK:-27.0}" ;;
     iphonesimulator) printf '%s\n' "${STUB_SIMULATOR_SDK:-27.0}" ;;
@@ -81,6 +84,11 @@ run_report verified EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27
 grep -qx 'classification=verified-toolchain' "$temporary_root/verified/output"
 grep -Fq "Xcode | \`27.0 (27A5228h)\`" "$temporary_root/verified/summary"
 
+run_report sdk-stderr-note EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27 STUB_XCRUN_SDK_NOTE=true
+grep -qx 'classification=verified-toolchain' "$temporary_root/sdk-stderr-note/output"
+grep -qx 'iphoneos-sdk=27.0' "$temporary_root/sdk-stderr-note/output"
+grep -qx 'iphonesimulator-sdk=27.0' "$temporary_root/sdk-stderr-note/output"
+
 run_report report-only EXPECTED_XCODE_MAJOR= EXPECTED_IOS_SDK_MAJOR=
 grep -qx 'classification=reported-toolchain' "$temporary_root/report-only/output"
 
@@ -103,6 +111,8 @@ if run_report inspection-failure EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=
   exit 1
 fi
 grep -qx 'classification=toolchain-mismatch' "$temporary_root/inspection-failure/output"
+grep -Fq 'xcrun could not inspect the iphoneos SDK: stubbed xcrun failure' "$temporary_root/inspection-failure/summary"
+grep -Fq 'xcrun could not inspect the iphonesimulator SDK: stubbed xcrun failure' "$temporary_root/inspection-failure/summary"
 
 if run_report noisy-sdk EXPECTED_XCODE_MAJOR=27 EXPECTED_IOS_SDK_MAJOR=27 STUB_IPHONEOS_SDK=$'warning\n27.0'; then
   echo "Expected multiline SDK output to fail closed." >&2

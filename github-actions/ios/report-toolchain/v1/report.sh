@@ -50,6 +50,14 @@ if [[ "$(uname -s 2>/dev/null || true)" != "Darwin" ]]; then
   exit 2
 fi
 
+temporary_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/report-ios-toolchain.XXXXXX")"
+sdk_stderr_file="$temporary_root/xcrun.stderr"
+cleanup() {
+  rm -f "$sdk_stderr_file"
+  rmdir "$temporary_root" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 if ! actual_macos_version="$(sw_vers -productVersion 2>&1)"; then
   record_mismatch "sw_vers could not read the macOS version: $actual_macos_version"
   actual_macos_version="missing"
@@ -78,19 +86,25 @@ else
 fi
 
 actual_iphoneos_sdk="missing"
-if ! actual_iphoneos_sdk="$(xcrun --sdk iphoneos --show-sdk-version 2>&1)"; then
-  record_mismatch "xcrun could not inspect the iphoneos SDK: $actual_iphoneos_sdk"
-  actual_iphoneos_sdk="missing"
-elif [[ ! "$actual_iphoneos_sdk" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-  record_mismatch "xcrun returned an unrecognized iphoneos SDK version: $actual_iphoneos_sdk"
+if actual_iphoneos_sdk="$(xcrun --sdk iphoneos --show-sdk-version 2> "$sdk_stderr_file")"; then
+  if [[ ! "$actual_iphoneos_sdk" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    record_mismatch "xcrun returned an unrecognized iphoneos SDK version: $actual_iphoneos_sdk"
+    actual_iphoneos_sdk="missing"
+  fi
+else
+  sdk_error="$(< "$sdk_stderr_file")"
+  record_mismatch "xcrun could not inspect the iphoneos SDK: ${sdk_error:-no diagnostic output}"
   actual_iphoneos_sdk="missing"
 fi
 actual_simulator_sdk="missing"
-if ! actual_simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version 2>&1)"; then
-  record_mismatch "xcrun could not inspect the iphonesimulator SDK: $actual_simulator_sdk"
-  actual_simulator_sdk="missing"
-elif [[ ! "$actual_simulator_sdk" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-  record_mismatch "xcrun returned an unrecognized iphonesimulator SDK version: $actual_simulator_sdk"
+if actual_simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version 2> "$sdk_stderr_file")"; then
+  if [[ ! "$actual_simulator_sdk" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    record_mismatch "xcrun returned an unrecognized iphonesimulator SDK version: $actual_simulator_sdk"
+    actual_simulator_sdk="missing"
+  fi
+else
+  sdk_error="$(< "$sdk_stderr_file")"
+  record_mismatch "xcrun could not inspect the iphonesimulator SDK: ${sdk_error:-no diagnostic output}"
   actual_simulator_sdk="missing"
 fi
 runtime_output=""
