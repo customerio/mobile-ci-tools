@@ -34,6 +34,11 @@ job-level `timeout-minutes`, because CoreSimulator commands have no portable
 macOS command-level timeout. The requested runtime major must match the built
 app's normalized `DTSDKName` major.
 
+The action assumes exclusive use of the selected simulator for the tested
+bundle identifier. Concurrent jobs sharing one simulator and bundle identifier
+can terminate or uninstall each other's fixture; serialize those jobs or use
+isolated simulators.
+
 The failure log contains the tested app's own unified-log output. Consumers
 should use short artifact retention and must not exercise fixtures that emit
 real customer profiles, device tokens, or other sensitive data.
