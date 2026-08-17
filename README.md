@@ -36,7 +36,8 @@ truncates its requested log before launch. The action intentionally does not rep
 simulator logs through the GitHub command parser. Consumers must also set a
 job-level `timeout-minutes`, because CoreSimulator commands have no portable
 macOS command-level timeout. The requested runtime major must match the built
-app's normalized `DTSDKName` major.
+app's normalized `DTSDKName` major. The app must use an Apple-conforming bundle
+identifier containing only ASCII letters, digits, hyphens, and periods.
 
 The action assumes exclusive use of the selected simulator for the tested
 bundle identifier. Concurrent jobs sharing one simulator and bundle identifier

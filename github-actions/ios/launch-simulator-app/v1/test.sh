@@ -409,6 +409,13 @@ if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner-boot
 fi
 grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-other-owner-booting/calls"
 
+run_case boot-race-reread-shutdown \
+  STUB_BOOT_FAILS=true \
+  STUB_BOOT_RACE_OTHER_OWNER=true \
+  STUB_RACE_STATE=Shutdown
+grep -Fxq 'simctl bootstatus SIM-27 -b' "$temporary_root/boot-race-reread-shutdown/calls"
+grep -Fxq 'simctl shutdown SIM-27' "$temporary_root/boot-race-reread-shutdown/calls"
+
 if run_case boot-race-state-unreadable \
   STUB_BOOT_FAILS=true \
   STUB_BOOT_RACE_OTHER_OWNER=true \
