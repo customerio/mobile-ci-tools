@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -Eeuo pipefail
+
+current_case=setup
+report_test_failure() {
+  local status="$?"
+  trap - ERR
+  echo "launch-simulator-app test failed at line $1 while running $current_case" >&2
+  exit "$status"
+}
+trap 'report_test_failure "$LINENO"' ERR
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/launch-ios-simulator-app.XXXXXX")"
@@ -94,6 +103,7 @@ chmod +x "$stub_bin"/*
 run_case() {
   local name="$1"
   shift
+  current_case="$name"
   local case_root="$temporary_root/$name"
   mkdir -p "$case_root"
   : > "$case_root/calls"
