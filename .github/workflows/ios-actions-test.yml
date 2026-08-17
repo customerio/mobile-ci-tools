@@ -202,7 +202,8 @@ jobs:
           CRASH_OUTCOME: ${{ steps.crash-smoke.outcome }}
         run: |
           test "$CRASH_OUTCOME" = 'failure'
-          grep -Fq 'did not survive 2 seconds' "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Fq 'exited or changed identity after 1s of the 2s survival window' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
 
       - name: Upload simulator launch diagnostics
         if: failure()
