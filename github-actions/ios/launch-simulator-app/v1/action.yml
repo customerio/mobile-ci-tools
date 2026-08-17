@@ -1,15 +1,15 @@
 name: Launch iOS simulator app
-description: Install a built .app on an available simulator, launch it, and fail if the process exits during the survival window.
+description: Install a simulator .app, launch it, and fail if its process exits or changes simulator identity during the survival window. The app is terminated and uninstalled afterward. Requires a macOS runner with xcrun, PlistBuddy, ps, and Python 3.
 
 inputs:
   app-path:
     description: Absolute or workspace-relative path to the built simulator .app.
     required: true
   expected-ios-major:
-    description: Required simulator runtime major version, for example 27.
+    description: Positive simulator runtime major version, for example 27. It must also match the app's DTSDKName major version.
     required: true
   survival-seconds:
-    description: Whole seconds the launched process must remain alive.
+    description: Whole seconds from 1 through 120 that the launched process must remain alive.
     required: false
     default: '5'
   log-path:

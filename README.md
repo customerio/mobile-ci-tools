@@ -21,3 +21,12 @@ This repository centralizes **GitHub Actions, workflows, Fastlane lanes, and aut
 does not remain alive for the configured survival window. It is a launch-crash
 sentinel, not evidence of lifecycle callbacks, push delivery, signing, or App
 Store compatibility.
+
+The action terminates and uninstalls the app after the smoke test. On failure,
+launch and survival failures write simulator diagnostics to its `log-path`
+output. Consumers should add an `if: failure()` artifact-upload step when that
+output is non-empty; the action intentionally does not replay app-controlled
+simulator logs through the GitHub command parser. Consumers must also set a
+job-level `timeout-minutes`, because CoreSimulator commands have no portable
+macOS command-level timeout. The requested runtime major must match the built
+app's normalized `DTSDKName` major.
