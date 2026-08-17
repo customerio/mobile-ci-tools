@@ -29,6 +29,12 @@ early_failure() {
   echo "::error title=iOS simulator launch smoke::$message"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
+      echo "bundle-id=$bundle_id"
+      echo "launched-pid=$launched_pid"
+      echo "simulator-udid=$simulator_udid"
+      echo "simulator-runtime=$simulator_runtime"
+      echo "app-sdk-name=$sdk_name"
+      echo "app-sdk-major=$app_sdk_major"
       echo 'classification=launch-failed'
       echo 'failure-reason=invalid-input'
       echo 'log-path='
@@ -194,7 +200,7 @@ for runtime, devices in payload.get("devices", {}).items():
         state = device.get("state", "Shutdown")
         if state not in ("Booted", "Shutdown"):
             continue
-        candidates.append((major, minor, state == "Booted", device["udid"], state, runtime))
+        candidates.append((state == "Booted", major, minor, device["udid"], state, runtime))
 
 if not candidates:
     sys.exit("No available iPhone simulator matches the requested iOS runtime.")
@@ -264,9 +270,22 @@ for devices in payload.get("devices", {}).values():
             print(device.get("state", "unknown"))
             raise SystemExit(0)
 raise SystemExit(1)
-' "$simulator_udid" 2>> "$log_path")" && [[ "$current_state" == "Booted" ]]; then
-      bootstatus_boot_if_needed=false
+' "$simulator_udid" 2>> "$log_path")"; then
+      if [[ "$current_state" == "Shutdown" ]]; then
+        booted_by_script=true
+      else
+        # Another owner has already advanced this simulator out of Shutdown.
+        # Wait for it without later shutting down state that we do not own.
+        bootstatus_boot_if_needed=false
+      fi
     else
+      # State could not be re-read, so fail closed on ownership. bootstatus
+      # without -b may still observe another owner's in-flight boot, but this
+      # action will never shut that simulator down.
+      bootstatus_boot_if_needed=false
+      booted_by_script=false
+    fi
+    if [[ "$bootstatus_boot_if_needed" == true ]]; then
       booted_by_script=true
     fi
   fi
@@ -301,8 +320,14 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
   "$sleep_bin" 1
   # BSD ps returns the full executable path for comm=. Bind that path to the
   # selected simulator and reject a crashed process waiting to be reaped.
-  if ! process_status="$("$ps_bin" -ww -p "$launched_pid" -o state= -o comm= 2>/dev/null)"; then
+  if process_status="$("$ps_bin" -ww -p "$launched_pid" -o state= -o comm= 2>/dev/null)"; then
+    process_status_code=0
+  else
+    process_status_code="$?"
     process_status=
+  fi
+  if (( process_status_code > 1 )); then
+    fail unexpected-error "Could not inspect the launched process after ${elapsed}s."
   fi
   read -r process_state process_command <<< "$process_status" || true
   if [[ -z "$process_status" \

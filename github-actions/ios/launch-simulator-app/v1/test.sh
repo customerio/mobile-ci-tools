@@ -43,12 +43,16 @@ printf '%s\n' "$*" >> "$STUB_CALLS"
     printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Shutdown","isAvailable":true,"name":"iPhone 17 Pro","udid":"INVALID UDID"}]}}'
   elif [[ "${STUB_BOOT_RACE_OTHER_OWNER:-false}" == true ]] \
     && [[ "$(grep -Fc 'simctl list devices available --json' "$STUB_CALLS")" -gt 1 ]]; then
-    printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Booted","isAvailable":true,"name":"iPhone 17 Pro","udid":"SIM-27"}]}}'
+    printf '%s\n' "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-27-0\":[{\"state\":\"${STUB_RACE_STATE:-Booted}\",\"isAvailable\":true,\"name\":\"iPhone 17 Pro\",\"udid\":\"SIM-27\"}]}}"
   elif [[ "${STUB_NO_DEVICES:-false}" == true ]]; then
     printf '%s\n' '{"devices":{}}'
   elif [[ "${STUB_DEVICE_BOOTED:-false}" == true ]]; then
     cat <<'JSON'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Booted","isAvailable":true,"name":"iPhone 17 Pro","udid":"SIM-27"}]}}
+JSON
+  elif [[ "${STUB_PREFER_BOOTED_DEVICE:-false}" == true ]]; then
+    cat <<'JSON'
+{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-1":[{"state":"Shutdown","isAvailable":true,"name":"iPhone Newer","udid":"SIM-27-1"}],"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Booted","isAvailable":true,"name":"iPhone Booted","udid":"SIM-27"}]}}
 JSON
   elif [[ "${STUB_TRANSITIONAL_DEVICE:-false}" == true ]]; then
     cat <<'JSON'
@@ -87,6 +91,7 @@ cat > "$stub_bin/ps" <<'STUB'
 #!/usr/bin/env bash
 printf 'ps %s\n' "$*" >> "$STUB_CALLS"
 [[ "${STUB_PROCESS_ALIVE:-true}" == true ]] || exit 1
+[[ -z "${STUB_PS_EXIT_STATUS:-}" ]] || exit "$STUB_PS_EXIT_STATUS"
 printf '%s %s\n' \
   "${STUB_PROCESS_STATE:-S}" \
   "${STUB_PROCESS_COMMAND:-/Users/runner/Library/Developer/CoreSimulator/Devices/${STUB_DEVICE_UDID:-SIM-27}/data/Containers/Bundle/Application/11111111-1111-1111-1111-111111111111/LaunchSmoke.app/LaunchSmoke}"
@@ -157,6 +162,15 @@ grep -Fq 'exited or changed identity after 1s of the 5s survival window' "$tempo
 grep -Fxq 'failure-reason=did-not-survive' "$temporary_root/process-exited/output"
 grep -Fxq 'launched-pid=4242' "$temporary_root/process-exited/output"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-exited/launch.log"
+grep -Fxq 'simctl terminate SIM-27 io.customer.test.launch-smoke' "$temporary_root/process-exited/calls"
+grep -Fxq 'simctl uninstall SIM-27 io.customer.test.launch-smoke' "$temporary_root/process-exited/calls"
+grep -Fxq 'simctl shutdown SIM-27' "$temporary_root/process-exited/calls"
+
+if run_case process-inspection-failed STUB_PS_EXIT_STATUS=2; then
+  echo 'Expected a process-inspection failure to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-failed/output"
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
   echo 'Expected a rejected simctl launch to fail.' >&2
@@ -283,6 +297,13 @@ if grep -Fq 'simctl boot SIM-27' "$temporary_root/already-booted/calls" \
   exit 1
 fi
 
+run_case prefer-booted-device STUB_PREFER_BOOTED_DEVICE=true
+grep -Fxq 'simulator-udid=SIM-27' "$temporary_root/prefer-booted-device/output"
+if grep -Fq 'SIM-27-1' "$temporary_root/prefer-booted-device/calls"; then
+  echo 'The action preferred a newer shutdown runtime over a matching booted runtime.' >&2
+  exit 1
+fi
+
 run_case transitional-device STUB_TRANSITIONAL_DEVICE=true
 grep -Fxq 'simulator-udid=SIM-27' "$temporary_root/transitional-device/output"
 if grep -Fq 'ZZZ-TRANSITIONAL' "$temporary_root/transitional-device/calls"; then
@@ -354,6 +375,15 @@ if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner/call
   exit 1
 fi
 
+run_case boot-race-other-owner-booting \
+  STUB_BOOT_FAILS=true \
+  STUB_BOOT_RACE_OTHER_OWNER=true \
+  STUB_RACE_STATE=Booting
+if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner-booting/calls"; then
+  echo 'The action shut down a simulator another process was still booting.' >&2
+  exit 1
+fi
+
 if run_case excessive-survival SURVIVAL_SECONDS=121; then
   echo 'Expected an excessive survival window to fail.' >&2
   exit 1
@@ -373,6 +403,9 @@ fi
 grep -Fq 'LAUNCH_LOG_PATH must be a single-line path' "$temporary_root/invalid-log-path/command.log"
 if [[ -e "$temporary_root/invalid-log-path/output" ]]; then
   grep -Fxq 'classification=launch-failed' "$temporary_root/invalid-log-path/output"
+  grep -Fxq 'bundle-id=unknown' "$temporary_root/invalid-log-path/output"
+  grep -Fxq 'launched-pid=unknown' "$temporary_root/invalid-log-path/output"
+  grep -Fxq 'simulator-udid=unknown' "$temporary_root/invalid-log-path/output"
 else
   echo 'A rejected log path did not publish its failure classification.' >&2
   exit 1
@@ -386,5 +419,29 @@ if run_case unwritable-log-path LAUNCH_LOG_PATH="$unwritable_parent/launch.log";
 fi
 grep -Fq 'LAUNCH_LOG_PATH could not be created' "$temporary_root/unwritable-log-path/command.log"
 grep -Fxq 'classification=launch-failed' "$temporary_root/unwritable-log-path/output"
+grep -Fxq 'bundle-id=unknown' "$temporary_root/unwritable-log-path/output"
+grep -Fxq 'launched-pid=unknown' "$temporary_root/unwritable-log-path/output"
+
+default_log_root="$temporary_root/default-log-path"
+mkdir -p "$default_log_root"
+current_case=default-log-path
+: > "$default_log_root/calls"
+env \
+  APP_PATH="$app_path" \
+  EXPECTED_IOS_MAJOR=27 \
+  SURVIVAL_SECONDS=1 \
+  RUNNER_TEMP="$default_log_root" \
+  GITHUB_OUTPUT="$default_log_root/output" \
+  XCRUN_BIN="$stub_bin/xcrun" \
+  PYTHON_BIN=python3 \
+  PLIST_BUDDY_BIN="$stub_bin/plist-buddy" \
+  PS_BIN="$stub_bin/ps" \
+  SLEEP_BIN="$stub_bin/sleep" \
+  STUB_CALLS="$default_log_root/calls" \
+  STUB_DEVICE_UDID=SIM-27 \
+  "$BASH" "$script_dir/launch.sh" > "$default_log_root/command.log" 2>&1
+default_log_path="$(sed -n 's/^log-path=//p' "$default_log_root/output")"
+[[ "$default_log_path" == "$default_log_root"/ios-simulator-launch-*.log ]]
+test -s "$default_log_path"
 
 echo 'launch-simulator-app tests passed'

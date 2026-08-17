@@ -61,3 +61,94 @@ jobs:
           test -n "$XCODE_VERSION"
           test -n "$IPHONEOS_SDK"
           test -n "$IPHONESIMULATOR_SDK"
+
+      - name: Build a minimal UIScene simulator app
+        id: launch-fixture
+        shell: bash
+        env:
+          IPHONESIMULATOR_SDK: ${{ steps.reporter.outputs.iphonesimulator-sdk }}
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/LaunchSmoke.app"
+          source_path="$RUNNER_TEMP/LaunchSmoke.swift"
+          mkdir -p "$app_path"
+          cat > "$source_path" <<'SWIFT'
+          import UIKit
+
+          final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+              var window: UIWindow?
+
+              func scene(
+                  _ scene: UIScene,
+                  willConnectTo session: UISceneSession,
+                  options connectionOptions: UIScene.ConnectionOptions
+              ) {
+                  guard let windowScene = scene as? UIWindowScene else { return }
+                  let window = UIWindow(windowScene: windowScene)
+                  window.rootViewController = UIViewController()
+                  window.makeKeyAndVisible()
+                  self.window = window
+              }
+          }
+
+          @main
+          final class AppDelegate: UIResponder, UIApplicationDelegate {
+              func application(
+                  _ application: UIApplication,
+                  configurationForConnecting connectingSceneSession: UISceneSession,
+                  options: UIScene.ConnectionOptions
+              ) -> UISceneConfiguration {
+                  UISceneConfiguration(
+                      name: "Default Configuration",
+                      sessionRole: connectingSceneSession.role
+                  )
+              }
+          }
+          SWIFT
+          sdk_path="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          architecture="$(uname -m)"
+          xcrun --sdk iphonesimulator swiftc \
+            -module-name LaunchSmoke \
+            -target "${architecture}-apple-ios15.0-simulator" \
+            -sdk "$sdk_path" \
+            "$source_path" \
+            -o "$app_path/LaunchSmoke"
+          cat > "$app_path/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>LaunchSmoke</string>
+            <key>CFBundleIdentifier</key><string>io.customer.mobile-ci-tools.launch-smoke</string>
+            <key>CFBundleName</key><string>LaunchSmoke</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>DTSDKName</key><string>iphonesimulator${IPHONESIMULATOR_SDK}</string>
+            <key>MinimumOSVersion</key><string>15.0</string>
+            <key>UIApplicationSceneManifest</key>
+            <dict>
+              <key>UIApplicationSupportsMultipleScenes</key><false/>
+              <key>UISceneConfigurations</key>
+              <dict>
+                <key>UIWindowSceneSessionRoleApplication</key>
+                <array><dict>
+                  <key>UISceneConfigurationName</key><string>Default Configuration</string>
+                  <key>UISceneDelegateClassName</key><string>LaunchSmoke.SceneDelegate</string>
+                </dict></array>
+              </dict>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
+          ios_major="${IPHONESIMULATOR_SDK%%.*}"
+          [[ "$ios_major" =~ ^[1-9][0-9]*$ ]]
+          echo "app-path=$app_path" >> "$GITHUB_OUTPUT"
+          echo "ios-major=$ios_major" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test simulator install, launch, and process survival
+        uses: ./github-actions/ios/launch-simulator-app/v1
+        with:
+          app-path: ${{ steps.launch-fixture.outputs.app-path }}
+          expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
+          survival-seconds: '2'
