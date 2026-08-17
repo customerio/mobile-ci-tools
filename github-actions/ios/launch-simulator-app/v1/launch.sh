@@ -169,7 +169,7 @@ executable="$raw_executable"
 if ! raw_sdk_name="$("$plist_buddy_bin" -c 'Print :DTSDKName' "$app_path/Info.plist" 2>&1)"; then
   fail invalid-app "The built app has no readable DTSDKName: $raw_sdk_name"
 fi
-if [[ ! "$raw_sdk_name" =~ ^iphonesimulator([0-9]+)(\.[0-9]+)?$ ]]; then
+if [[ ! "$raw_sdk_name" =~ ^iphonesimulator([0-9]+)(\.[0-9]+)*$ ]]; then
   fail invalid-app 'The built app is not an iPhone simulator product.'
 fi
 app_sdk_major="$((10#${BASH_REMATCH[1]}))"
@@ -284,9 +284,6 @@ raise SystemExit(1)
       # action will never shut that simulator down.
       bootstatus_boot_if_needed=false
       booted_by_script=false
-    fi
-    if [[ "$bootstatus_boot_if_needed" == true ]]; then
-      booted_by_script=true
     fi
   fi
 fi

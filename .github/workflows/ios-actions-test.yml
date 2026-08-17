@@ -37,6 +37,7 @@ jobs:
 
   macos-bash-tests:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -147,8 +148,28 @@ jobs:
           echo "ios-major=$ios_major" >> "$GITHUB_OUTPUT"
 
       - name: Smoke-test simulator install, launch, and process survival
+        id: launch-smoke
         uses: ./github-actions/ios/launch-simulator-app/v1
         with:
           app-path: ${{ steps.launch-fixture.outputs.app-path }}
           expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
           survival-seconds: '2'
+
+      - name: Verify simulator launch outputs
+        env:
+          CLASSIFICATION: ${{ steps.launch-smoke.outputs.classification }}
+          FAILURE_REASON: ${{ steps.launch-smoke.outputs.failure-reason }}
+          LAUNCHED_PID: ${{ steps.launch-smoke.outputs.launched-pid }}
+        run: |
+          test "$CLASSIFICATION" = 'launch-passed'
+          test "$FAILURE_REASON" = 'none'
+          [[ "$LAUNCHED_PID" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Upload simulator launch diagnostics
+        if: failure() && steps.launch-smoke.outputs.log-path != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-simulator-launch-smoke-log
+          path: ${{ steps.launch-smoke.outputs.log-path }}
+          if-no-files-found: error
+          retention-days: 7

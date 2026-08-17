@@ -43,7 +43,11 @@ printf '%s\n' "$*" >> "$STUB_CALLS"
     printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Shutdown","isAvailable":true,"name":"iPhone 17 Pro","udid":"INVALID UDID"}]}}'
   elif [[ "${STUB_BOOT_RACE_OTHER_OWNER:-false}" == true ]] \
     && [[ "$(grep -Fc 'simctl list devices available --json' "$STUB_CALLS")" -gt 1 ]]; then
-    printf '%s\n' "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-27-0\":[{\"state\":\"${STUB_RACE_STATE:-Booted}\",\"isAvailable\":true,\"name\":\"iPhone 17 Pro\",\"udid\":\"SIM-27\"}]}}"
+    if [[ "${STUB_RACE_DEVICE_MISSING:-false}" == true ]]; then
+      printf '%s\n' '{"devices":{}}'
+    else
+      printf '%s\n' "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-27-0\":[{\"state\":\"${STUB_RACE_STATE:-Booted}\",\"isAvailable\":true,\"name\":\"iPhone 17 Pro\",\"udid\":\"SIM-27\"}]}}"
+    fi
   elif [[ "${STUB_NO_DEVICES:-false}" == true ]]; then
     printf '%s\n' '{"devices":{}}'
   elif [[ "${STUB_DEVICE_BOOTED:-false}" == true ]]; then
@@ -289,6 +293,8 @@ else
   exit 1
 fi
 grep -Fq 'stubbed boot transition rejection' "$temporary_root/boot-transition/launch.log"
+grep -Fxq 'simctl bootstatus SIM-27 -b' "$temporary_root/boot-transition/calls"
+grep -Fxq 'simctl shutdown SIM-27' "$temporary_root/boot-transition/calls"
 
 run_case already-booted STUB_DEVICE_BOOTED=true
 if grep -Fq 'simctl boot SIM-27' "$temporary_root/already-booted/calls" \
@@ -374,6 +380,7 @@ if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner/call
   echo 'The action shut down a simulator booted by another process.' >&2
   exit 1
 fi
+grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-other-owner/calls"
 
 run_case boot-race-other-owner-booting \
   STUB_BOOT_FAILS=true \
@@ -383,6 +390,21 @@ if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner-boot
   echo 'The action shut down a simulator another process was still booting.' >&2
   exit 1
 fi
+grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-other-owner-booting/calls"
+
+run_case boot-race-state-unreadable \
+  STUB_BOOT_FAILS=true \
+  STUB_BOOT_RACE_OTHER_OWNER=true \
+  STUB_RACE_DEVICE_MISSING=true
+grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-state-unreadable/calls"
+if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-state-unreadable/calls"; then
+  echo 'The action claimed ownership after the simulator state became unreadable.' >&2
+  exit 1
+fi
+
+run_case three-component-sdk STUB_SDK_NAME=iphonesimulator27.0.1
+grep -Fxq 'classification=launch-passed' "$temporary_root/three-component-sdk/output"
+grep -Fxq 'app-sdk-major=27' "$temporary_root/three-component-sdk/output"
 
 if run_case excessive-survival SURVIVAL_SECONDS=121; then
   echo 'Expected an excessive survival window to fail.' >&2
