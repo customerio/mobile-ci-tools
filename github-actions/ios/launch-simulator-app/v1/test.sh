@@ -122,7 +122,7 @@ run_case() {
     STUB_CALLS="$case_root/calls" \
     STUB_DEVICE_UDID=SIM-27 \
     "$@" \
-    bash "$script_dir/launch.sh" > "$case_root/command.log" 2>&1
+    "$BASH" "$script_dir/launch.sh" > "$case_root/command.log" 2>&1
 }
 
 run_case success
@@ -169,7 +169,8 @@ if grep -Fxq '::warning title=forged::must-not-run' "$temporary_root/launch-reje
   echo 'A multiline tool error emitted a forged GitHub workflow command.' >&2
   exit 1
 fi
-grep -Fq '%0A::warning title=forged::must-not-run' "$temporary_root/launch-rejected/command.log"
+grep -Eq '^::error title=iOS simulator launch smoke::.*stubbed launch rejection.*must-not-run$' \
+  "$temporary_root/launch-rejected/command.log"
 if grep -Fxq '::warning title=forged-log::must-not-run' "$temporary_root/launch-rejected/command.log"; then
   echo 'Simulator diagnostics emitted a forged GitHub workflow command.' >&2
   exit 1
