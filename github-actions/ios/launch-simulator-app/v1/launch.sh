@@ -256,7 +256,8 @@ if [[ "$initial_state" == "Shutdown" ]]; then
   else
     # A device observed while transitioning can reject a duplicate boot. Let
     # bootstatus be the authoritative readiness check. Re-read state first so
-    # cleanup never shuts down a simulator another process booted in the race.
+    # this narrows the chance that cleanup shuts down a simulator another
+    # process booted in the race. Shared simulator ownership is unsupported.
     printf 'simctl boot returned: %s\n' "$boot_output" >> "$log_path"
     if current_state="$("$xcrun_bin" simctl list devices available --json 2>> "$log_path" | "$python_bin" -c '
 import json

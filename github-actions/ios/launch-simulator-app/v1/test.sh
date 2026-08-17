@@ -460,6 +460,7 @@ env \
   APP_PATH="$app_path" \
   EXPECTED_IOS_MAJOR=27 \
   SURVIVAL_SECONDS=1 \
+  LAUNCH_LOG_PATH= \
   RUNNER_TEMP="$default_log_root" \
   GITHUB_OUTPUT="$default_log_root/output" \
   GITHUB_STEP_SUMMARY="$default_log_root/summary" \
