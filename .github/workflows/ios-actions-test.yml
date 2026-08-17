@@ -109,6 +109,7 @@ jobs:
           sdk_path="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           architecture="$(uname -m)"
           xcrun --sdk iphonesimulator swiftc \
+            -parse-as-library \
             -module-name LaunchSmoke \
             -target "${architecture}-apple-ios15.0-simulator" \
             -sdk "$sdk_path" \
@@ -167,7 +168,7 @@ jobs:
           [[ "$LAUNCHED_PID" =~ ^[1-9][0-9]*$ ]]
 
       - name: Upload simulator launch diagnostics
-        if: failure()
+        if: failure() && steps.launch-smoke.outcome != 'skipped'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ios-simulator-launch-smoke-log
