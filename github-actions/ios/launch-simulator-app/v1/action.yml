@@ -1,0 +1,57 @@
+name: Launch iOS simulator app
+description: Install a built .app on an available simulator, launch it, and fail if the process exits during the survival window.
+
+inputs:
+  app-path:
+    description: Absolute or workspace-relative path to the built simulator .app.
+    required: true
+  expected-ios-major:
+    description: Required simulator runtime major version, for example 27.
+    required: true
+  survival-seconds:
+    description: Whole seconds the launched process must remain alive.
+    required: false
+    default: '5'
+  log-path:
+    description: Path for launch metadata and failure logs. Defaults under RUNNER_TEMP.
+    required: false
+    default: ''
+
+outputs:
+  bundle-id:
+    description: Bundle identifier read from the built app.
+    value: ${{ steps.launch.outputs.bundle-id }}
+  launched-pid:
+    description: PID returned by simctl launch.
+    value: ${{ steps.launch.outputs.launched-pid }}
+  simulator-udid:
+    description: Simulator used for the launch smoke test.
+    value: ${{ steps.launch.outputs.simulator-udid }}
+  simulator-runtime:
+    description: Simulator runtime identifier used for the launch smoke test.
+    value: ${{ steps.launch.outputs.simulator-runtime }}
+  app-sdk-name:
+    description: DTSDKName embedded in the built app.
+    value: ${{ steps.launch.outputs.app-sdk-name }}
+  app-sdk-major:
+    description: Major iOS simulator SDK embedded in the built app.
+    value: ${{ steps.launch.outputs.app-sdk-major }}
+  classification:
+    description: launch-passed or launch-failed.
+    value: ${{ steps.launch.outputs.classification }}
+  log-path:
+    description: Launch metadata and failure log path.
+    value: ${{ steps.launch.outputs.log-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install, launch, and verify process survival
+      id: launch
+      shell: bash
+      env:
+        APP_PATH: ${{ inputs.app-path }}
+        EXPECTED_IOS_MAJOR: ${{ inputs.expected-ios-major }}
+        SURVIVAL_SECONDS: ${{ inputs.survival-seconds }}
+        LAUNCH_LOG_PATH: ${{ inputs.log-path }}
+      run: bash "$GITHUB_ACTION_PATH/launch.sh"
