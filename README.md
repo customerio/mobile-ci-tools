@@ -31,7 +31,8 @@ that could not yet be determined use `unknown`. Consumers should pass a known
 `log-path`, then add an `if: failure()` artifact-upload step for that same path
 with `if-no-files-found: ignore`. A failed composite action is not required to
 propagate its mapped outputs, so diagnostics upload must not depend on the
-`log-path` output. The action intentionally does not replay app-controlled
+`log-path` output. Use a distinct path for each invocation because the action
+truncates its requested log before launch. The action intentionally does not replay app-controlled
 simulator logs through the GitHub command parser. Consumers must also set a
 job-level `timeout-minutes`, because CoreSimulator commands have no portable
 macOS command-level timeout. The requested runtime major must match the built

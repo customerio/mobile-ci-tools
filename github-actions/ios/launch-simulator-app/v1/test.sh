@@ -163,6 +163,7 @@ if run_case process-exited STUB_PROCESS_ALIVE=false; then
   exit 1
 fi
 grep -Fq 'exited or changed identity after 1s of the 5s survival window' "$temporary_root/process-exited/launch.log"
+grep -Fq 'ps observation after 1s:' "$temporary_root/process-exited/launch.log"
 grep -Fxq 'failure-reason=did-not-survive' "$temporary_root/process-exited/output"
 grep -Fxq 'launched-pid=4242' "$temporary_root/process-exited/output"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-exited/launch.log"
@@ -408,11 +409,18 @@ if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner-boot
 fi
 grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-other-owner-booting/calls"
 
-run_case boot-race-state-unreadable \
+if run_case boot-race-state-unreadable \
   STUB_BOOT_FAILS=true \
   STUB_BOOT_RACE_OTHER_OWNER=true \
-  STUB_RACE_DEVICE_MISSING=true
-grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-state-unreadable/calls"
+  STUB_RACE_DEVICE_MISSING=true; then
+  echo 'Expected an unreadable simulator state after boot rejection to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=simulator-boot-failed' "$temporary_root/boot-race-state-unreadable/output"
+if grep -Fq 'simctl bootstatus SIM-27' "$temporary_root/boot-race-state-unreadable/calls"; then
+  echo 'The action waited for a simulator whose ownership and state were unknown.' >&2
+  exit 1
+fi
 if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-state-unreadable/calls"; then
   echo 'The action claimed ownership after the simulator state became unreadable.' >&2
   exit 1

@@ -294,11 +294,12 @@ raise SystemExit(1)
         bootstatus_boot_if_needed=false
       fi
     else
-      # State could not be re-read, so fail closed on ownership. bootstatus
-      # without -b may still observe another owner's in-flight boot, but this
-      # action will never shut that simulator down.
-      bootstatus_boot_if_needed=false
+      # State could not be re-read, so ownership cannot be established and
+      # nothing in this job will boot the device. Fail rather than waiting on
+      # a boot that may never happen.
       booted_by_script=false
+      fail simulator-boot-failed \
+        "Simulator $simulator_udid rejected boot and its state could not be re-read: $boot_output"
     fi
   fi
 fi
@@ -346,6 +347,9 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
     || "$process_state" == Z* \
     || "${process_command##*/}" != "$executable" \
     || "$process_command" != *"/Devices/$simulator_udid/"* ]]; then
+    printf 'ps observation after %ss: %s\n' \
+      "$elapsed" \
+      "$(single_line "$process_status")" >> "$log_path"
     record_failure did-not-survive "$bundle_id exited or changed identity after ${elapsed}s of the ${survival_seconds}s survival window."
     collect_failure_log
     exit 1

@@ -43,7 +43,7 @@ outputs:
     description: Machine-readable failure category, or none after a successful launch.
     value: ${{ steps.launch.outputs.failure-reason }}
   log-path:
-    description: Launch metadata and failure log path.
+    description: Launch metadata and failure log path, or unknown when the requested path was rejected.
     value: ${{ steps.launch.outputs.log-path }}
 
 runs:
