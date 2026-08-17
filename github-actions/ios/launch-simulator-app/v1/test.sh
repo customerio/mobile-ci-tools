@@ -297,6 +297,7 @@ grep -Fxq 'simctl bootstatus SIM-27 -b' "$temporary_root/boot-transition/calls"
 grep -Fxq 'simctl shutdown SIM-27' "$temporary_root/boot-transition/calls"
 
 run_case already-booted STUB_DEVICE_BOOTED=true
+grep -Fxq 'simctl bootstatus SIM-27' "$temporary_root/already-booted/calls"
 if grep -Fq 'simctl boot SIM-27' "$temporary_root/already-booted/calls" \
   || grep -Fq 'simctl shutdown SIM-27' "$temporary_root/already-booted/calls"; then
   echo 'The action mutated the lifecycle of a simulator that was already booted.' >&2

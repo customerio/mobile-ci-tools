@@ -154,6 +154,7 @@ jobs:
           app-path: ${{ steps.launch-fixture.outputs.app-path }}
           expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
           survival-seconds: '2'
+          log-path: ${{ runner.temp }}/ios-simulator-launch-smoke.log
 
       - name: Verify simulator launch outputs
         env:
@@ -166,10 +167,10 @@ jobs:
           [[ "$LAUNCHED_PID" =~ ^[1-9][0-9]*$ ]]
 
       - name: Upload simulator launch diagnostics
-        if: failure() && steps.launch-smoke.outputs.log-path != ''
+        if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ios-simulator-launch-smoke-log
-          path: ${{ steps.launch-smoke.outputs.log-path }}
+          path: ${{ runner.temp }}/ios-simulator-launch-smoke.log
           if-no-files-found: error
           retention-days: 7
