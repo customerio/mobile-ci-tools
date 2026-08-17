@@ -28,9 +28,14 @@ STUB
 cat > "$stub_bin/xcrun" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STUB_CALLS"
-if [[ "$1 $2 $3 $4" == 'simctl list devices available' ]]; then
+  if [[ "$1 $2 $3 $4" == 'simctl list devices available' ]]; then
   [[ "${STUB_LIST_WARNING:-false}" != true ]] || echo 'stubbed simctl warning' >&2
-  if [[ "${STUB_NO_DEVICES:-false}" == true ]]; then
+  if [[ "${STUB_MALFORMED_SELECTION:-false}" == true ]]; then
+    printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Shutdown","isAvailable":true,"name":"iPhone 17 Pro","udid":"INVALID UDID"}]}}'
+  elif [[ "${STUB_BOOT_RACE_OTHER_OWNER:-false}" == true ]] \
+    && [[ "$(grep -Fc 'simctl list devices available --json' "$STUB_CALLS")" -gt 1 ]]; then
+    printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Booted","isAvailable":true,"name":"iPhone 17 Pro","udid":"SIM-27"}]}}'
+  elif [[ "${STUB_NO_DEVICES:-false}" == true ]]; then
     printf '%s\n' '{"devices":{}}'
   elif [[ "${STUB_DEVICE_BOOTED:-false}" == true ]]; then
     cat <<'JSON'
@@ -80,6 +85,7 @@ STUB
 
 cat > "$stub_bin/sleep" <<'STUB'
 #!/usr/bin/env bash
+[[ "${STUB_SLEEP_FAILS:-false}" != true ]] || exit 9
 exit 0
 STUB
 
@@ -113,6 +119,7 @@ run_case success
 grep -Fxq 'bundle-id=io.customer.test.launch-smoke' "$temporary_root/success/output"
 grep -Fxq 'launched-pid=4242' "$temporary_root/success/output"
 grep -Fxq 'classification=launch-passed' "$temporary_root/success/output"
+grep -Fxq 'failure-reason=none' "$temporary_root/success/output"
 grep -Fxq 'simulator-runtime=com.apple.CoreSimulator.SimRuntime.iOS-27-0' "$temporary_root/success/output"
 grep -Fxq 'app-sdk-name=iphonesimulator27.0' "$temporary_root/success/output"
 grep -Fxq 'app-sdk-major=27' "$temporary_root/success/output"
@@ -137,6 +144,7 @@ if run_case process-exited STUB_PROCESS_ALIVE=false; then
   exit 1
 fi
 grep -Fq 'exited or changed identity after 1s of the 5s survival window' "$temporary_root/process-exited/launch.log"
+grep -Fxq 'failure-reason=did-not-survive' "$temporary_root/process-exited/output"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-exited/launch.log"
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
@@ -144,6 +152,7 @@ if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
   exit 1
 fi
 grep -Fq 'stubbed launch rejection' "$temporary_root/launch-rejected/launch.log"
+grep -Fxq 'failure-reason=launch-failed' "$temporary_root/launch-rejected/output"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/launch-rejected/launch.log"
 grep -Fq '::warning title=forged-log::must-not-run' "$temporary_root/launch-rejected/launch.log"
 if grep -Fxq '::warning title=forged::must-not-run' "$temporary_root/launch-rejected/command.log"; then
@@ -180,6 +189,7 @@ if run_case invalid-bundle-id STUB_BUNDLE_ID=$'io.customer.test\ninjected=value'
   exit 1
 fi
 grep -Fq 'invalid CFBundleIdentifier' "$temporary_root/invalid-bundle-id/launch.log"
+grep -Fxq 'failure-reason=invalid-app' "$temporary_root/invalid-bundle-id/output"
 if grep -Fq 'injected=value' "$temporary_root/invalid-bundle-id/output"; then
   echo 'Invalid bundle metadata injected a forged GitHub output.' >&2
   exit 1
@@ -223,6 +233,7 @@ if run_case device-missing STUB_NO_DEVICES=true; then
   exit 1
 fi
 grep -Fq 'No available iPhone simulator matches' "$temporary_root/device-missing/launch.log"
+grep -Fxq 'failure-reason=runtime-unavailable' "$temporary_root/device-missing/output"
 
 run_case selection-warning STUB_LIST_WARNING=true
 grep -Fq 'stubbed simctl warning' "$temporary_root/selection-warning/launch.log"
@@ -233,6 +244,7 @@ if run_case sdk-mismatch STUB_SDK_NAME=iphonesimulator26.5; then
   exit 1
 fi
 grep -Fq 'does not match the requested iOS 27' "$temporary_root/sdk-mismatch/launch.log"
+grep -Fxq 'failure-reason=sdk-mismatch' "$temporary_root/sdk-mismatch/output"
 
 if run_case zero-padded-sdk STUB_SDK_NAME=iphonesimulator08.0; then
   echo 'Expected a zero-padded mismatched SDK major to fail.' >&2
@@ -276,12 +288,14 @@ if run_case bootstatus-rejected STUB_BOOTSTATUS_FAILS=true; then
   exit 1
 fi
 grep -Fq 'did not finish booting' "$temporary_root/bootstatus-rejected/launch.log"
+grep -Fxq 'failure-reason=simulator-boot-failed' "$temporary_root/bootstatus-rejected/output"
 
 if run_case install-rejected STUB_INSTALL_FAILS=true; then
   echo 'Expected install failure to fail.' >&2
   exit 1
 fi
 grep -Fq 'stubbed install rejection' "$temporary_root/install-rejected/launch.log"
+grep -Fxq 'failure-reason=install-failed' "$temporary_root/install-rejected/output"
 
 if run_case missing-app APP_PATH="$temporary_root/Missing.app"; then
   echo 'Expected a missing app to fail.' >&2
@@ -295,12 +309,37 @@ if run_case missing-app-input APP_PATH=; then
 fi
 grep -Fq 'APP_PATH is required' "$temporary_root/missing-app-input/launch.log"
 grep -Fxq 'classification=launch-failed' "$temporary_root/missing-app-input/output"
+grep -Fxq 'failure-reason=invalid-input' "$temporary_root/missing-app-input/output"
 
 if run_case invalid-survival SURVIVAL_SECONDS=0; then
   echo 'Expected an invalid survival window to fail.' >&2
   exit 1
 fi
 grep -Fq 'SURVIVAL_SECONDS must be a whole number from 1 through 120' "$temporary_root/invalid-survival/launch.log"
+grep -Fxq 'failure-reason=invalid-input' "$temporary_root/invalid-survival/output"
+
+if run_case malformed-selection STUB_MALFORMED_SELECTION=true; then
+  echo 'Expected a malformed selected simulator identity to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=runtime-selection-failed' "$temporary_root/malformed-selection/output"
+
+if run_case unexpected-command-failure STUB_SLEEP_FAILS=true; then
+  echo 'Expected an unexpected sleep failure to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/unexpected-command-failure/output"
+
+if run_case boot-race-other-owner STUB_BOOT_FAILS=true STUB_BOOT_RACE_OTHER_OWNER=true; then
+  :
+else
+  echo 'Expected a simulator booted by another process to become ready.' >&2
+  exit 1
+fi
+if grep -Fq 'simctl shutdown SIM-27' "$temporary_root/boot-race-other-owner/calls"; then
+  echo 'The action shut down a simulator booted by another process.' >&2
+  exit 1
+fi
 
 if run_case excessive-survival SURVIVAL_SECONDS=121; then
   echo 'Expected an excessive survival window to fail.' >&2

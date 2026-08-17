@@ -22,6 +22,7 @@ initial_state=unknown
 launched_pid=
 booted_by_script=false
 installed=false
+failure_recorded=false
 
 early_failure() {
   local message="$1"
@@ -29,6 +30,7 @@ early_failure() {
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
       echo 'classification=launch-failed'
+      echo 'failure-reason=invalid-input'
       echo 'log-path='
     } >> "$GITHUB_OUTPUT"
   fi
@@ -58,7 +60,8 @@ github_command_value() {
 }
 
 record_failure() {
-  local message="$1"
+  local reason="$1"
+  local message="$2"
   local safe_message
   local annotation_message
   local safe_bundle_id
@@ -68,6 +71,7 @@ record_failure() {
   local safe_sdk_name
   local safe_app_sdk_major
   local safe_log_path
+  failure_recorded=true
   safe_message="$(single_line "$message")"
   annotation_message="$(github_command_value "$message")"
   safe_bundle_id="$(single_line "$bundle_id")"
@@ -90,6 +94,7 @@ record_failure() {
       echo "app-sdk-name=$safe_sdk_name"
       echo "app-sdk-major=$safe_app_sdk_major"
       echo 'classification=launch-failed'
+      echo "failure-reason=$reason"
       echo "log-path=$safe_log_path"
     } >> "$GITHUB_OUTPUT"
   fi
@@ -98,6 +103,7 @@ record_failure() {
       echo '## iOS simulator launch smoke'
       echo
       echo '**Classification:** launch-failed'
+      echo "**Failure category:** $reason"
       echo "**Reason:** $safe_message"
       echo "**App SDK:** \`$safe_sdk_name\`"
       echo "**Runtime:** \`$safe_simulator_runtime\`"
@@ -107,53 +113,63 @@ record_failure() {
 }
 
 fail() {
-  record_failure "$1"
+  record_failure "$1" "$2"
   exit 1
 }
 
+unexpected_failure() {
+  local status="$?"
+  trap - ERR
+  if [[ "$failure_recorded" != true ]]; then
+    record_failure unexpected-error "An unexpected command failed while running the launch smoke test."
+  fi
+  exit "$status"
+}
+trap unexpected_failure ERR
+
 if [[ -z "$app_path" ]]; then
-  fail 'APP_PATH is required.'
+  fail invalid-input 'APP_PATH is required.'
 fi
 if [[ ! -d "$app_path" || ! -f "$app_path/Info.plist" ]]; then
-  fail "Built simulator app is missing or has no Info.plist: $app_path"
+  fail invalid-input "Built simulator app is missing or has no Info.plist: $app_path"
 fi
 if [[ ! "$expected_ios_major" =~ ^[1-9][0-9]*$ ]]; then
-  fail 'EXPECTED_IOS_MAJOR must be a positive whole number.'
+  fail invalid-input 'EXPECTED_IOS_MAJOR must be a positive whole number.'
 fi
 survival_pattern='^([1-9]|[1-9][0-9]|1[01][0-9]|120)$'
 if [[ ! "$survival_seconds" =~ $survival_pattern ]]; then
-  fail 'SURVIVAL_SECONDS must be a whole number from 1 through 120.'
+  fail invalid-input 'SURVIVAL_SECONDS must be a whole number from 1 through 120.'
 fi
 
 if ! raw_bundle_id="$("$plist_buddy_bin" -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" 2>&1)"; then
-  fail "The built app has no readable CFBundleIdentifier: $raw_bundle_id"
+  fail invalid-app "The built app has no readable CFBundleIdentifier: $raw_bundle_id"
 fi
 if [[ ! "$raw_bundle_id" =~ ^[A-Za-z0-9.-]+$ ]]; then
-  fail 'The built app has an invalid CFBundleIdentifier.'
+  fail invalid-app 'The built app has an invalid CFBundleIdentifier.'
 fi
 bundle_id="$raw_bundle_id"
 
 if ! raw_executable="$("$plist_buddy_bin" -c 'Print :CFBundleExecutable' "$app_path/Info.plist" 2>&1)"; then
-  fail "The built app has no readable CFBundleExecutable: $raw_executable"
+  fail invalid-app "The built app has no readable CFBundleExecutable: $raw_executable"
 fi
 # Spaces are valid in an executable name. Restrict the remaining shape so the
 # value cannot inject GitHub outputs or an NSPredicate used for failure logs.
 executable_pattern='^[-A-Za-z0-9._ ]+$'
 if [[ ! "$raw_executable" =~ $executable_pattern ]]; then
-  fail 'The built app has an invalid CFBundleExecutable.'
+  fail invalid-app 'The built app has an invalid CFBundleExecutable.'
 fi
 executable="$raw_executable"
 
 if ! raw_sdk_name="$("$plist_buddy_bin" -c 'Print :DTSDKName' "$app_path/Info.plist" 2>&1)"; then
-  fail "The built app has no readable DTSDKName: $raw_sdk_name"
+  fail invalid-app "The built app has no readable DTSDKName: $raw_sdk_name"
 fi
 if [[ ! "$raw_sdk_name" =~ ^iphonesimulator([0-9]+)(\.[0-9]+)?$ ]]; then
-  fail 'The built app is not an iPhone simulator product.'
+  fail invalid-app 'The built app is not an iPhone simulator product.'
 fi
 app_sdk_major="$((10#${BASH_REMATCH[1]}))"
 sdk_name="$raw_sdk_name"
 if (( expected_ios_major != app_sdk_major )); then
-  fail "The app SDK $sdk_name does not match the requested iOS $expected_ios_major validation runtime."
+  fail sdk-mismatch "The app SDK $sdk_name does not match the requested iOS $expected_ios_major validation runtime."
 fi
 
 if ! selection="$("$xcrun_bin" simctl list devices available --json 2>> "$log_path" | "$python_bin" -c '
@@ -186,7 +202,7 @@ candidates.sort(reverse=True)
 _, _, _, udid, state, runtime = candidates[0]
 print(f"{udid}\t{state}\t{runtime}")
 ' "$expected_ios_major" 2>> "$log_path")"; then
-  fail "Could not select an iPhone simulator for iOS $expected_ios_major."
+  fail runtime-unavailable "Could not select an iPhone simulator for iOS $expected_ios_major."
 fi
 
 IFS=$'\t' read -r simulator_udid initial_state simulator_runtime <<< "$selection"
@@ -194,7 +210,7 @@ if [[ "$selection" == *$'\n'* \
   || ! "$simulator_udid" =~ ^[A-Za-z0-9-]+$ \
   || -z "$initial_state" \
   || ! "$simulator_runtime" =~ ^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9-]+$ ]]; then
-  fail 'Could not parse a single simulator identity from device selection.'
+  fail runtime-selection-failed 'Could not parse a single simulator identity from device selection.'
 fi
 
 collect_failure_log() {
@@ -228,13 +244,31 @@ trap 'exit 143' TERM
 
 bootstatus_boot_if_needed=false
 if [[ "$initial_state" == "Shutdown" ]]; then
-  booted_by_script=true
   bootstatus_boot_if_needed=true
-  if ! boot_output="$("$xcrun_bin" simctl boot "$simulator_udid" 2>&1)"; then
+  if boot_output="$("$xcrun_bin" simctl boot "$simulator_udid" 2>&1)"; then
+    booted_by_script=true
+  else
     # A device observed while transitioning can reject a duplicate boot. Let
-    # bootstatus be the authoritative workflow-level readiness check; callers
-    # retain the enclosing job timeout as the upper bound.
+    # bootstatus be the authoritative readiness check. Re-read state first so
+    # cleanup never shuts down a simulator another process booted in the race.
     printf 'simctl boot returned: %s\n' "$boot_output" >> "$log_path"
+    if current_state="$("$xcrun_bin" simctl list devices available --json 2>> "$log_path" | "$python_bin" -c '
+import json
+import sys
+
+udid = sys.argv[1]
+payload = json.load(sys.stdin)
+for devices in payload.get("devices", {}).values():
+    for device in devices:
+        if device.get("udid") == udid:
+            print(device.get("state", "unknown"))
+            raise SystemExit(0)
+raise SystemExit(1)
+' "$simulator_udid" 2>> "$log_path")" && [[ "$current_state" == "Booted" ]]; then
+      bootstatus_boot_if_needed=false
+    else
+      booted_by_script=true
+    fi
   fi
 fi
 bootstatus_arguments=(simctl bootstatus "$simulator_udid")
@@ -242,15 +276,15 @@ if [[ "$bootstatus_boot_if_needed" == true ]]; then
   bootstatus_arguments+=(-b)
 fi
 if ! bootstatus_output="$("$xcrun_bin" "${bootstatus_arguments[@]}" 2>&1)"; then
-  fail "Simulator $simulator_udid did not finish booting: $bootstatus_output"
+  fail simulator-boot-failed "Simulator $simulator_udid did not finish booting: $bootstatus_output"
 fi
 if ! install_output="$("$xcrun_bin" simctl install "$simulator_udid" "$app_path" 2>&1)"; then
-  fail "Could not install $bundle_id on simulator $simulator_udid: $install_output"
+  fail install-failed "Could not install $bundle_id on simulator $simulator_udid: $install_output"
 fi
 installed=true
 
 if ! launch_output="$("$xcrun_bin" simctl launch --terminate-running-process "$simulator_udid" "$bundle_id" 2>&1)"; then
-  record_failure "simctl could not launch $bundle_id: $launch_output"
+  record_failure launch-failed "simctl could not launch $bundle_id: $launch_output"
   collect_failure_log
   exit 1
 fi
@@ -258,7 +292,7 @@ printf '%s\n' "$launch_output" >> "$log_path"
 escaped_bundle_id="${bundle_id//./\\.}"
 launched_pid="$(printf '%s\n' "$launch_output" | sed -nE "s/^${escaped_bundle_id}: ([1-9][0-9]*)$/\\1/p" | tail -1)"
 if [[ -z "$launched_pid" ]]; then
-  record_failure "simctl launch did not return a PID for $bundle_id."
+  record_failure launch-failed "simctl launch did not return a PID for $bundle_id."
   collect_failure_log
   exit 1
 fi
@@ -275,7 +309,7 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
     || "$process_state" == Z* \
     || "${process_command##*/}" != "$executable" \
     || "$process_command" != *"/Devices/$simulator_udid/"* ]]; then
-    record_failure "$bundle_id exited or changed identity after ${elapsed}s of the ${survival_seconds}s survival window."
+    record_failure did-not-survive "$bundle_id exited or changed identity after ${elapsed}s of the ${survival_seconds}s survival window."
     collect_failure_log
     exit 1
   fi
@@ -300,6 +334,7 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     echo "app-sdk-name=$sdk_name"
     echo "app-sdk-major=$app_sdk_major"
     echo 'classification=launch-passed'
+    echo 'failure-reason=none'
     echo "log-path=$log_path"
   } >> "$GITHUB_OUTPUT"
 fi

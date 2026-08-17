@@ -24,7 +24,11 @@ Store compatibility.
 
 The action terminates and uninstalls the app after the smoke test. On failure,
 launch and survival failures write simulator diagnostics to its `log-path`
-output. Consumers should add an `if: failure()` artifact-upload step when that
+output. The `failure-reason` output distinguishes invalid inputs and products,
+SDK/runtime mismatch, runtime selection or boot failure, install failure,
+launch rejection, failure to survive, and unexpected command failure. Outputs
+that could not yet be determined use `unknown`; a failure before the log is
+initialized can leave other outputs unset. Consumers should add an `if: failure()` artifact-upload step when that
 output is non-empty; the action intentionally does not replay app-controlled
 simulator logs through the GitHub command parser. Consumers must also set a
 job-level `timeout-minutes`, because CoreSimulator commands have no portable

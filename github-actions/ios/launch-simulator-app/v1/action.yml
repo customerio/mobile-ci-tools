@@ -6,7 +6,7 @@ inputs:
     description: Absolute or workspace-relative path to the built simulator .app.
     required: true
   expected-ios-major:
-    description: Positive simulator runtime major version, for example 27. It must also match the app's DTSDKName major version.
+    description: Positive simulator runtime major version, for example 27. The app must be rebuilt with the same DTSDKName major version.
     required: true
   survival-seconds:
     description: Whole seconds from 1 through 120 that the launched process must remain alive.
@@ -19,26 +19,29 @@ inputs:
 
 outputs:
   bundle-id:
-    description: Bundle identifier read from the built app.
+    description: Bundle identifier read from the built app, or unknown when it could not be determined.
     value: ${{ steps.launch.outputs.bundle-id }}
   launched-pid:
     description: PID returned by simctl launch.
     value: ${{ steps.launch.outputs.launched-pid }}
   simulator-udid:
-    description: Simulator used for the launch smoke test.
+    description: Simulator used for the launch smoke test, or unknown before selection.
     value: ${{ steps.launch.outputs.simulator-udid }}
   simulator-runtime:
-    description: Simulator runtime identifier used for the launch smoke test.
+    description: Simulator runtime identifier used for the launch smoke test, or unknown before selection.
     value: ${{ steps.launch.outputs.simulator-runtime }}
   app-sdk-name:
-    description: DTSDKName embedded in the built app.
+    description: DTSDKName embedded in the built app, or unknown when unreadable.
     value: ${{ steps.launch.outputs.app-sdk-name }}
   app-sdk-major:
-    description: Major iOS simulator SDK embedded in the built app.
+    description: Major iOS simulator SDK embedded in the built app, or unknown when unreadable.
     value: ${{ steps.launch.outputs.app-sdk-major }}
   classification:
     description: launch-passed or launch-failed.
     value: ${{ steps.launch.outputs.classification }}
+  failure-reason:
+    description: Machine-readable failure category, or none after a successful launch.
+    value: ${{ steps.launch.outputs.failure-reason }}
   log-path:
     description: Launch metadata and failure log path.
     value: ${{ steps.launch.outputs.log-path }}
