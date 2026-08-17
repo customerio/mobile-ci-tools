@@ -155,6 +155,7 @@ if run_case process-exited STUB_PROCESS_ALIVE=false; then
 fi
 grep -Fq 'exited or changed identity after 1s of the 5s survival window' "$temporary_root/process-exited/launch.log"
 grep -Fxq 'failure-reason=did-not-survive' "$temporary_root/process-exited/output"
+grep -Fxq 'launched-pid=4242' "$temporary_root/process-exited/output"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-exited/launch.log"
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
@@ -313,6 +314,7 @@ if run_case missing-app APP_PATH="$temporary_root/Missing.app"; then
   exit 1
 fi
 grep -Fq 'Built simulator app is missing or has no Info.plist' "$temporary_root/missing-app/launch.log"
+grep -Fxq 'launched-pid=unknown' "$temporary_root/missing-app/output"
 
 if run_case missing-app-input APP_PATH=; then
   echo 'Expected an empty app path to fail through the action contract.' >&2

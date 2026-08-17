@@ -28,8 +28,8 @@ output. The `failure-reason` output distinguishes invalid inputs and products,
 SDK/runtime mismatch, runtime selection or boot failure, install failure,
 launch rejection, failure to survive, and unexpected command failure. Outputs
 that could not yet be determined use `unknown`; a failure before the log is
-initialized can leave other outputs unset. Consumers should add an `if: failure()` artifact-upload step when that
-output is non-empty; the action intentionally does not replay app-controlled
+initialized can leave other outputs unset. Consumers should add an `if: failure()` artifact-upload step when the
+`log-path` output is non-empty; the action intentionally does not replay app-controlled
 simulator logs through the GitHub command parser. Consumers must also set a
 job-level `timeout-minutes`, because CoreSimulator commands have no portable
 macOS command-level timeout. The requested runtime major must match the built

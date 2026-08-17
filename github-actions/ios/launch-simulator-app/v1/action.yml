@@ -11,7 +11,7 @@ inputs:
   survival-seconds:
     description: Whole seconds from 1 through 120 that the launched process must remain alive.
     required: false
-    default: '5'
+    default: '10'
   log-path:
     description: Path for launch metadata and failure logs. Defaults under RUNNER_TEMP.
     required: false
@@ -22,7 +22,7 @@ outputs:
     description: Bundle identifier read from the built app, or unknown when it could not be determined.
     value: ${{ steps.launch.outputs.bundle-id }}
   launched-pid:
-    description: PID returned by simctl launch.
+    description: PID returned by simctl launch, or unknown before launch.
     value: ${{ steps.launch.outputs.launched-pid }}
   simulator-udid:
     description: Simulator used for the launch smoke test, or unknown before selection.

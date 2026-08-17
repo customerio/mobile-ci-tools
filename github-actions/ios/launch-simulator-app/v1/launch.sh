@@ -10,7 +10,7 @@ sleep_bin="${SLEEP_BIN:-sleep}"
 
 app_path="${APP_PATH:-}"
 expected_ios_major="${EXPECTED_IOS_MAJOR:-}"
-survival_seconds="${SURVIVAL_SECONDS:-5}"
+survival_seconds="${SURVIVAL_SECONDS:-10}"
 log_path="${LAUNCH_LOG_PATH:-${RUNNER_TEMP:-/tmp}/ios-simulator-launch-${BASHPID:-$$}.log}"
 bundle_id=unknown
 executable=unknown
@@ -19,7 +19,7 @@ app_sdk_major=unknown
 simulator_udid=unknown
 simulator_runtime=unknown
 initial_state=unknown
-launched_pid=
+launched_pid=unknown
 booted_by_script=false
 installed=false
 failure_recorded=false
