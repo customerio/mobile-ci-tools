@@ -37,8 +37,20 @@ early_failure() {
       echo "app-sdk-major=$app_sdk_major"
       echo 'classification=launch-failed'
       echo 'failure-reason=invalid-input'
-      echo 'log-path='
+      echo 'log-path=unknown'
     } >> "$GITHUB_OUTPUT"
+  fi
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo '## iOS simulator launch smoke'
+      echo
+      echo '**Classification:** launch-failed'
+      echo '**Failure category:** invalid-input'
+      echo '**Reason:**'
+      echo
+      echo "    $message"
+      echo "**Failure log:** \`unknown\`"
+    } >> "$GITHUB_STEP_SUMMARY"
   fi
   exit 1
 }

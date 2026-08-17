@@ -148,6 +148,7 @@ jobs:
           PLIST
           crash_app_path="$RUNNER_TEMP/LaunchCrash.app"
           cp -R "$app_path" "$crash_app_path"
+          rm -f -- "$crash_app_path/LaunchSmoke"
           xcrun --sdk iphonesimulator swiftc \
             -parse-as-library \
             -DCRASH_ON_CONNECT \
@@ -173,7 +174,7 @@ jobs:
         with:
           app-path: ${{ steps.launch-fixture.outputs.app-path }}
           expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
-          survival-seconds: '2'
+          survival-seconds: '15'
           log-path: ${{ runner.temp }}/ios-simulator-launch-smoke.log
 
       - name: Verify simulator launch outputs
@@ -197,12 +198,13 @@ jobs:
           log-path: ${{ runner.temp }}/ios-simulator-launch-crash.log
 
       - name: Verify a real launch crash is rejected
-        if: always()
         env:
           CRASH_OUTCOME: ${{ steps.crash-smoke.outcome }}
         run: |
           test "$CRASH_OUTCOME" = 'failure'
-          grep -Fq 'exited or changed identity after 1s of the 2s survival window' \
+          grep -Fq 'exited or changed identity after' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Fq '===== Simulator log for' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
 
       - name: Upload simulator launch diagnostics
