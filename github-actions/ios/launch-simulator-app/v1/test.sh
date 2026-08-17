@@ -330,6 +330,14 @@ run_case executable-with-space \
   STUB_PROCESS_COMMAND='/Users/runner/Library/Developer/CoreSimulator/Devices/SIM-27/data/Launch Smoke.app/Launch Smoke'
 grep -Fxq 'classification=launch-passed' "$temporary_root/executable-with-space/output"
 
+for invalid_executable in ' LaunchSmoke' 'LaunchSmoke '; do
+  if run_case invalid-executable-whitespace STUB_EXECUTABLE="$invalid_executable"; then
+    echo 'Expected executable whitespace at the boundary to fail.' >&2
+    exit 1
+  fi
+  grep -Fxq 'failure-reason=invalid-app' "$temporary_root/invalid-executable-whitespace/output"
+done
+
 if run_case bootstatus-rejected STUB_BOOTSTATUS_FAILS=true; then
   echo 'Expected bootstatus failure to fail.' >&2
   exit 1

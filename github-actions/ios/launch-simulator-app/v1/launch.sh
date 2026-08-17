@@ -110,7 +110,9 @@ record_failure() {
       echo
       echo '**Classification:** launch-failed'
       echo "**Failure category:** $reason"
-      echo "**Reason:** $safe_message"
+      echo '**Reason:**'
+      echo
+      echo "    $safe_message"
       echo "**App SDK:** \`$safe_sdk_name\`"
       echo "**Runtime:** \`$safe_simulator_runtime\`"
       echo "**Failure log:** \`$safe_log_path\`"
@@ -160,7 +162,7 @@ if ! raw_executable="$("$plist_buddy_bin" -c 'Print :CFBundleExecutable' "$app_p
 fi
 # Spaces are valid in an executable name. Restrict the remaining shape so the
 # value cannot inject GitHub outputs or an NSPredicate used for failure logs.
-executable_pattern='^[-A-Za-z0-9._ ]+$'
+executable_pattern='^[-A-Za-z0-9._]+([ ]+[-A-Za-z0-9._]+)*$'
 if [[ ! "$raw_executable" =~ $executable_pattern ]]; then
   fail invalid-app 'The built app has an invalid CFBundleExecutable.'
 fi

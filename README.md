@@ -23,12 +23,15 @@ sentinel, not evidence of lifecycle callbacks, push delivery, signing, or App
 Store compatibility.
 
 The action terminates and uninstalls the app after the smoke test. On failure,
-launch and survival failures write simulator diagnostics to its `log-path`
-output. The `failure-reason` output distinguishes invalid inputs and products,
+launch and survival failures write simulator diagnostics to the explicit
+`log-path` input. The `failure-reason` output distinguishes invalid inputs and products,
 SDK/runtime mismatch, runtime selection or boot failure, install failure,
 launch rejection, failure to survive, and unexpected command failure. Outputs
-that could not yet be determined use `unknown`. Consumers should add an `if: failure()` artifact-upload step when the
-`log-path` output is non-empty; the action intentionally does not replay app-controlled
+that could not yet be determined use `unknown`. Consumers should pass a known
+`log-path`, then add an `if: failure()` artifact-upload step for that same path
+with `if-no-files-found: ignore`. A failed composite action is not required to
+propagate its mapped outputs, so diagnostics upload must not depend on the
+`log-path` output. The action intentionally does not replay app-controlled
 simulator logs through the GitHub command parser. Consumers must also set a
 job-level `timeout-minutes`, because CoreSimulator commands have no portable
 macOS command-level timeout. The requested runtime major must match the built
