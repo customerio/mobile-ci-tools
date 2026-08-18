@@ -347,7 +347,7 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
   fi
   read -r process_state process_command <<< "$process_status" || true
   if [[ -z "$process_status" \
-    || "$process_state" != [RSI]* \
+    || "$process_state" != [RSIU]* \
     || "${process_command##*/}" != "$executable" \
     || "$process_command" != *"/Devices/$simulator_udid/"* ]]; then
     printf 'ps observation after %ss: %s\n' \

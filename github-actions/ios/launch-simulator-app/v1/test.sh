@@ -232,12 +232,8 @@ fi
 grep -Fq 'ps observation after 1s: T ' "$temporary_root/stopped-process/launch.log"
 grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/stopped-process/launch.log"
 
-if run_case uninterruptible-process STUB_PROCESS_STATE=U; then
-  echo 'Expected an uninterruptible process to fail the survival check.' >&2
-  exit 1
-fi
-grep -Fq 'ps observation after 1s: U ' "$temporary_root/uninterruptible-process/launch.log"
-grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/uninterruptible-process/launch.log"
+run_case uninterruptible-process STUB_PROCESS_STATE=U
+grep -Fxq 'classification=launch-passed' "$temporary_root/uninterruptible-process/output"
 
 if run_case invalid-bundle-id STUB_BUNDLE_ID=$'io.customer.test\ninjected=value'; then
   echo 'Expected an invalid bundle identifier to fail.' >&2
