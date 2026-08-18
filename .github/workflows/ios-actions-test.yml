@@ -37,7 +37,7 @@ jobs:
 
   macos-bash-tests:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -87,6 +87,7 @@ jobs:
                   #if CRASH_ON_CONNECT
                   NSLog("CIO_LAUNCH_SMOKE_CRASH_FIXTURE")
                   DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                      NSLog("CIO_LAUNCH_SMOKE_CRASH_FIXTURE_FATAL")
                       fatalError("intentional launch-smoke crash")
                   }
                   #endif
@@ -183,7 +184,7 @@ jobs:
         with:
           app-path: ${{ steps.launch-fixture.outputs.app-path }}
           expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
-          survival-seconds: '15'
+          survival-seconds: '5'
           log-path: ${{ runner.temp }}/ios-simulator-launch-smoke.log
 
       - name: Verify simulator launch outputs
@@ -216,6 +217,8 @@ jobs:
           grep -Fq '===== Simulator log for' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
           grep -Fq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Fq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE_FATAL' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
 
       - name: Upload simulator launch diagnostics

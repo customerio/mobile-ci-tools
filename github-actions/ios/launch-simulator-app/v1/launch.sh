@@ -78,6 +78,11 @@ github_command_value() {
 }
 
 record_failure() {
+  # Expected simulator/tool failures are captured in conditionals below, so global errtrace would
+  # incorrectly invoke ERR inside their command substitutions on Bash 3.2. Enable it only while
+  # publishing the already-classified result so a write/helper failure cannot leave empty outputs.
+  set -E
+  trap unexpected_failure ERR
   local reason="$1"
   local message="$2"
   local safe_message
@@ -130,6 +135,7 @@ record_failure() {
       echo "**Failure log:** \`$safe_log_path\`"
     } >> "$GITHUB_STEP_SUMMARY"
   fi
+  set +E
 }
 
 fail() {
@@ -192,6 +198,10 @@ if (( expected_ios_major != app_sdk_major )); then
   fail sdk-mismatch "The app SDK $sdk_name does not match the requested iOS $expected_ios_major validation runtime."
 fi
 
+if ! "$python_bin" --version >> "$log_path" 2>&1; then
+  fail unexpected-error 'The configured Python interpreter is unavailable.'
+fi
+
 if ! selection="$("$xcrun_bin" simctl list devices available --json 2>> "$log_path" | "$python_bin" -c '
 import json
 import re
@@ -234,20 +244,27 @@ if [[ "$selection" == *$'\n'* \
 fi
 
 collect_failure_log() {
+  set -E
+  trap unexpected_failure ERR
   local failure_log
   local diagnostic_window_seconds=$((survival_seconds + 60))
-  failure_log="$({
-    echo
-    echo "===== Simulator log for $executable ====="
-    "$xcrun_bin" simctl spawn "$simulator_udid" log show \
+  local simulator_log=
+  for _ in 1 2 3 4 5; do
+    simulator_log="$("$xcrun_bin" simctl spawn "$simulator_udid" log show \
       --last "${diagnostic_window_seconds}s" \
       --style compact \
-      --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" || true
-  } 2>&1)"
+      --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" 2>&1 || true)"
+    [[ -z "$simulator_log" ]] || break
+    "$sleep_bin" 1
+  done
+  failure_log="
+===== Simulator log for $executable =====
+$simulator_log"
   # App-controlled log lines may look like GitHub workflow commands. Preserve
   # them in the artifact without replaying them through the runner console.
   printf '%s\n' "$failure_log" >> "$log_path"
   printf 'Simulator diagnostics were written to %s.\n' "$log_path"
+  set +E
 }
 
 cleanup() {
