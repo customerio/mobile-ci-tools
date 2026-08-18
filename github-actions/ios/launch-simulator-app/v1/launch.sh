@@ -281,14 +281,18 @@ collect_failure_log() {
     app_log="$("$xcrun_bin" simctl spawn "$simulator_udid" log show \
       --last "${diagnostic_window_seconds}s" \
       --style compact \
-      --predicate "process == '$executable'" 2>/dev/null || true)"
+      --predicate "process == '$executable'" 2>/dev/null \
+      | /usr/bin/tail -n 2000 \
+      | /usr/bin/head -c 1048576 || true)"
     [[ -z "$app_log" ]] || break
     "$sleep_bin" 1
   done
   simulator_log="$("$xcrun_bin" simctl spawn "$simulator_udid" log show \
     --last "${diagnostic_window_seconds}s" \
     --style compact \
-    --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" 2>&1 || true)"
+    --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" 2>&1 \
+    | /usr/bin/tail -n 2000 \
+    | /usr/bin/head -c 1048576 || true)"
   failure_log="
 ===== App log for $executable =====
 $app_log

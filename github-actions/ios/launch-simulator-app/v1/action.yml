@@ -60,9 +60,9 @@ runs:
         EXPECTED_IOS_MAJOR: ${{ inputs.expected-ios-major }}
         SURVIVAL_SECONDS: ${{ inputs.survival-seconds }}
         LAUNCH_LOG_PATH: ${{ inputs.log-path }}
-        XCRUN_BIN: xcrun
-        PYTHON_BIN: python3
+        XCRUN_BIN: /usr/bin/xcrun
+        PYTHON_BIN: /usr/bin/python3
         PLIST_BUDDY_BIN: /usr/libexec/PlistBuddy
-        PS_BIN: ps
-        SLEEP_BIN: sleep
+        PS_BIN: /bin/ps
+        SLEEP_BIN: /bin/sleep
       run: bash "$GITHUB_ACTION_PATH/launch.sh"

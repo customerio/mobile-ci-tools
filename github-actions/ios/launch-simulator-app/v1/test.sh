@@ -13,11 +13,11 @@ trap 'report_test_failure "$LINENO"' ERR
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for production_tool in \
-  'XCRUN_BIN: xcrun' \
-  'PYTHON_BIN: python3' \
+  'XCRUN_BIN: /usr/bin/xcrun' \
+  'PYTHON_BIN: /usr/bin/python3' \
   'PLIST_BUDDY_BIN: /usr/libexec/PlistBuddy' \
-  'PS_BIN: ps' \
-  'SLEEP_BIN: sleep'; do
+  'PS_BIN: /bin/ps' \
+  'SLEEP_BIN: /bin/sleep'; do
   grep -Fq "$production_tool" "$script_dir/action.yml"
 done
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/launch-ios-simulator-app.XXXXXX")"
@@ -106,7 +106,13 @@ elif [[ "$1 $2" == 'simctl spawn' ]]; then
       exit 0
     fi
   fi
-  printf '%s\n' 'stubbed simulator failure log' '::warning title=forged-log::must-not-run'
+  if [[ "${STUB_LARGE_LOG:-false}" == true ]]; then
+    for line in {1..3000}; do
+      printf 'stubbed simulator failure log %s\n' "$line"
+    done
+  else
+    printf '%s\n' 'stubbed simulator failure log' '::warning title=forged-log::must-not-run'
+  fi
 fi
 STUB
 
@@ -290,6 +296,15 @@ if run_case malformed-launch STUB_LAUNCH_MALFORMED=true; then
   exit 1
 fi
 grep -Fq 'simctl launch did not return a PID' "$temporary_root/malformed-launch/launch.log"
+
+if run_case bounded-diagnostics STUB_LAUNCH_FAILS=true STUB_LARGE_LOG=true; then
+  echo 'Expected a rejected launch with large diagnostics to fail.' >&2
+  exit 1
+fi
+if (( $(wc -l < "$temporary_root/bounded-diagnostics/launch.log") > 4500 )); then
+  echo 'Expected failure diagnostics to be line-bounded.' >&2
+  exit 1
+fi
 
 if run_case wrong-simulator-process \
   STUB_PROCESS_COMMAND='/Users/runner/Library/Developer/CoreSimulator/Devices/OTHER-SIM/data/LaunchSmoke.app/LaunchSmoke'; then
