@@ -344,13 +344,13 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
   fi
   read -r process_state process_command <<< "$process_status" || true
   if [[ -z "$process_status" \
-    || "$process_state" == Z* \
+    || "$process_state" != [RSI]* \
     || "${process_command##*/}" != "$executable" \
     || "$process_command" != *"/Devices/$simulator_udid/"* ]]; then
     printf 'ps observation after %ss: %s\n' \
       "$elapsed" \
       "$(single_line "$process_status")" >> "$log_path"
-    record_failure did-not-survive "$bundle_id exited or changed identity after ${elapsed}s of the ${survival_seconds}s survival window."
+    record_failure did-not-survive "$bundle_id exited, became non-runnable, or changed identity after ${elapsed}s of the ${survival_seconds}s survival window."
     collect_failure_log
     exit 1
   fi

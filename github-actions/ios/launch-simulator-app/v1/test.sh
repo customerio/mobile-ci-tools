@@ -162,7 +162,7 @@ if run_case process-exited STUB_PROCESS_ALIVE=false; then
   echo 'Expected an app that exits during the survival window to fail.' >&2
   exit 1
 fi
-grep -Fq 'exited or changed identity after 1s of the 5s survival window' "$temporary_root/process-exited/launch.log"
+grep -Fq 'exited, became non-runnable, or changed identity after 1s of the 5s survival window' "$temporary_root/process-exited/launch.log"
 grep -Fq 'ps observation after 1s:' "$temporary_root/process-exited/launch.log"
 grep -Fxq 'failure-reason=did-not-survive' "$temporary_root/process-exited/output"
 grep -Fxq 'launched-pid=4242' "$temporary_root/process-exited/output"
@@ -207,20 +207,34 @@ if run_case wrong-simulator-process \
   echo 'Expected a process from another simulator to fail identity validation.' >&2
   exit 1
 fi
-grep -Fq 'exited or changed identity' "$temporary_root/wrong-simulator-process/launch.log"
+grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/wrong-simulator-process/launch.log"
 
 if run_case wrong-executable-process \
   STUB_PROCESS_COMMAND='/Users/runner/Library/Developer/CoreSimulator/Devices/SIM-27/data/LaunchSmoke.app/OtherExecutable'; then
   echo 'Expected a different executable in the selected simulator to fail identity validation.' >&2
   exit 1
 fi
-grep -Fq 'exited or changed identity' "$temporary_root/wrong-executable-process/launch.log"
+grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/wrong-executable-process/launch.log"
 
 if run_case zombie-process STUB_PROCESS_STATE=Z+; then
   echo 'Expected a zombie process to fail the survival check.' >&2
   exit 1
 fi
-grep -Fq 'exited or changed identity' "$temporary_root/zombie-process/launch.log"
+grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/zombie-process/launch.log"
+
+if run_case stopped-process STUB_PROCESS_STATE=T; then
+  echo 'Expected a stopped process to fail the survival check.' >&2
+  exit 1
+fi
+grep -Fq 'ps observation after 1s: T ' "$temporary_root/stopped-process/launch.log"
+grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/stopped-process/launch.log"
+
+if run_case uninterruptible-process STUB_PROCESS_STATE=U; then
+  echo 'Expected an uninterruptible process to fail the survival check.' >&2
+  exit 1
+fi
+grep -Fq 'ps observation after 1s: U ' "$temporary_root/uninterruptible-process/launch.log"
+grep -Fq 'exited, became non-runnable, or changed identity' "$temporary_root/uninterruptible-process/launch.log"
 
 if run_case invalid-bundle-id STUB_BUNDLE_ID=$'io.customer.test\ninjected=value'; then
   echo 'Expected an invalid bundle identifier to fail.' >&2

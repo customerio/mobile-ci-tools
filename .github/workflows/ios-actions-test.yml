@@ -149,8 +149,8 @@ jobs:
           </dict>
           </plist>
           PLIST
+          [[ -n "${RUNNER_TEMP:-}" && "$RUNNER_TEMP" = /* && -d "$RUNNER_TEMP" ]]
           crash_app_path="$RUNNER_TEMP/LaunchCrash.app"
-          test "$crash_app_path" = "$RUNNER_TEMP/LaunchCrash.app"
           rm -rf -- "$crash_app_path"
           cp -R "$app_path" "$crash_app_path"
           rm -f -- "$crash_app_path/LaunchSmoke"
@@ -207,7 +207,7 @@ jobs:
           CRASH_OUTCOME: ${{ steps.crash-smoke.outcome }}
         run: |
           test "$CRASH_OUTCOME" = 'failure'
-          grep -Fq 'exited or changed identity after' \
+          grep -Fq 'exited, became non-runnable, or changed identity after' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
           grep -Fq '===== Simulator log for' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
