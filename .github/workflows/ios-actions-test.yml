@@ -22,23 +22,30 @@ jobs:
 
       - name: Check shell syntax
         run: |
-          for script in github-actions/ios/report-toolchain/v1/*.sh; do
+          for script in github-actions/ios/*/v1/*.sh; do
             bash -n "$script"
           done
 
       - name: Run shellcheck
-        run: shellcheck github-actions/ios/report-toolchain/v1/*.sh
+        run: shellcheck github-actions/ios/*/v1/*.sh
 
       - name: Test toolchain reporter
         run: bash github-actions/ios/report-toolchain/v1/test.sh
 
+      - name: Test simulator launch sentinel
+        run: bash github-actions/ios/launch-simulator-app/v1/test.sh
+
   macos-bash-tests:
     runs-on: macos-26
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Test with the macOS system Bash
         run: /bin/bash github-actions/ios/report-toolchain/v1/test.sh
+
+      - name: Test simulator launch sentinel with the macOS system Bash
+        run: /bin/bash github-actions/ios/launch-simulator-app/v1/test.sh
 
       - name: Smoke-test the composite action on the hosted toolchain
         id: reporter
@@ -55,3 +62,174 @@ jobs:
           test -n "$XCODE_VERSION"
           test -n "$IPHONEOS_SDK"
           test -n "$IPHONESIMULATOR_SDK"
+
+      - name: Build a minimal UIScene simulator app
+        id: launch-fixture
+        shell: bash
+        env:
+          IPHONESIMULATOR_SDK: ${{ steps.reporter.outputs.iphonesimulator-sdk }}
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/LaunchSmoke.app"
+          source_path="$RUNNER_TEMP/LaunchSmoke.swift"
+          mkdir -p "$app_path"
+          cat > "$source_path" <<'SWIFT'
+          import UIKit
+
+          final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+              var window: UIWindow?
+
+              func scene(
+                  _ scene: UIScene,
+                  willConnectTo session: UISceneSession,
+                  options connectionOptions: UIScene.ConnectionOptions
+              ) {
+                  #if CRASH_ON_CONNECT
+                  NSLog("CIO_LAUNCH_SMOKE_CRASH_FIXTURE")
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                      NSLog("CIO_LAUNCH_SMOKE_CRASH_FIXTURE_FATAL")
+                      fatalError("intentional launch-smoke crash")
+                  }
+                  #endif
+                  guard let windowScene = scene as? UIWindowScene else { return }
+                  let window = UIWindow(windowScene: windowScene)
+                  window.rootViewController = UIViewController()
+                  window.makeKeyAndVisible()
+                  self.window = window
+              }
+          }
+
+          @main
+          final class AppDelegate: UIResponder, UIApplicationDelegate {
+              func application(
+                  _ application: UIApplication,
+                  configurationForConnecting connectingSceneSession: UISceneSession,
+                  options: UIScene.ConnectionOptions
+              ) -> UISceneConfiguration {
+                  UISceneConfiguration(
+                      name: "Default Configuration",
+                      sessionRole: connectingSceneSession.role
+                  )
+              }
+          }
+          SWIFT
+          sdk_path="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          architecture="$(uname -m)"
+          xcrun --sdk iphonesimulator swiftc \
+            -parse-as-library \
+            -module-name LaunchSmoke \
+            -target "${architecture}-apple-ios15.0-simulator" \
+            -sdk "$sdk_path" \
+            "$source_path" \
+            -o "$app_path/LaunchSmoke"
+          cat > "$app_path/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>LaunchSmoke</string>
+            <key>CFBundleIdentifier</key><string>io.customer.mobile-ci-tools.launch-smoke</string>
+            <key>CFBundleName</key><string>LaunchSmoke</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>DTPlatformName</key><string>iphonesimulator</string>
+            <key>DTSDKName</key><string>iphonesimulator${IPHONESIMULATOR_SDK}</string>
+            <key>LSRequiresIPhoneOS</key><true/>
+            <key>MinimumOSVersion</key><string>15.0</string>
+            <key>UIDeviceFamily</key><array><integer>1</integer></array>
+            <key>UIApplicationSceneManifest</key>
+            <dict>
+              <key>UIApplicationSupportsMultipleScenes</key><false/>
+              <key>UISceneConfigurations</key>
+              <dict>
+                <key>UIWindowSceneSessionRoleApplication</key>
+                <array><dict>
+                  <key>UISceneConfigurationName</key><string>Default Configuration</string>
+                  <key>UISceneDelegateClassName</key><string>LaunchSmoke.SceneDelegate</string>
+                </dict></array>
+              </dict>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
+          [[ -n "${RUNNER_TEMP:-}" && "$RUNNER_TEMP" = /* && -d "$RUNNER_TEMP" ]]
+          crash_app_path="$RUNNER_TEMP/LaunchCrash.app"
+          rm -rf -- "$crash_app_path"
+          cp -R "$app_path" "$crash_app_path"
+          rm -f -- "$crash_app_path/LaunchSmoke"
+          xcrun --sdk iphonesimulator swiftc \
+            -parse-as-library \
+            -DCRASH_ON_CONNECT \
+            -module-name LaunchSmoke \
+            -target "${architecture}-apple-ios15.0-simulator" \
+            -sdk "$sdk_path" \
+            "$source_path" \
+            -o "$crash_app_path/LaunchCrash"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleExecutable LaunchCrash' "$crash_app_path/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.customer.mobile-ci-tools.launch-crash' "$crash_app_path/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleName LaunchCrash' "$crash_app_path/Info.plist"
+          ios_major="${IPHONESIMULATOR_SDK%%.*}"
+          [[ "$ios_major" =~ ^[1-9][0-9]*$ ]]
+          {
+            echo "app-path=$app_path"
+            echo "crash-app-path=$crash_app_path"
+            echo "ios-major=$ios_major"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test simulator install, launch, and process survival
+        id: launch-smoke
+        uses: ./github-actions/ios/launch-simulator-app/v1
+        with:
+          app-path: ${{ steps.launch-fixture.outputs.app-path }}
+          expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
+          survival-seconds: '5'
+          log-path: ${{ runner.temp }}/ios-simulator-launch-smoke.log
+
+      - name: Verify simulator launch outputs
+        env:
+          CLASSIFICATION: ${{ steps.launch-smoke.outputs.classification }}
+          FAILURE_REASON: ${{ steps.launch-smoke.outputs.failure-reason }}
+          LAUNCHED_PID: ${{ steps.launch-smoke.outputs.launched-pid }}
+        run: |
+          test "$CLASSIFICATION" = 'launch-passed'
+          test "$FAILURE_REASON" = 'none'
+          [[ "$LAUNCHED_PID" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Smoke-test a real launch crash
+        id: crash-smoke
+        continue-on-error: true
+        uses: ./github-actions/ios/launch-simulator-app/v1
+        with:
+          app-path: ${{ steps.launch-fixture.outputs.crash-app-path }}
+          expected-ios-major: ${{ steps.launch-fixture.outputs.ios-major }}
+          survival-seconds: '15'
+          log-path: ${{ runner.temp }}/ios-simulator-launch-crash.log
+
+      - name: Verify a real launch crash is rejected
+        env:
+          CRASH_OUTCOME: ${{ steps.crash-smoke.outcome }}
+        run: |
+          test "$CRASH_OUTCOME" = 'failure'
+          grep -Fq 'exited, became non-runnable, or changed identity after' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Fq '===== App log for' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Fq '===== Simulator diagnostics for' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Eq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE([^_[:alnum:]]|$)' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Fq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE_FATAL' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+
+      - name: Upload simulator launch diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-simulator-launch-smoke-log
+          path: |
+            ${{ runner.temp }}/ios-simulator-launch-smoke.log
+            ${{ runner.temp }}/ios-simulator-launch-crash.log
+          if-no-files-found: ignore
+          retention-days: 7

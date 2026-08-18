@@ -1,0 +1,68 @@
+name: Launch iOS simulator app
+description: Install a simulator .app, launch it, and fail if its process exits or changes simulator identity during the survival window. The app is terminated and uninstalled afterward. Requires a macOS runner with xcrun, PlistBuddy, ps, and Python 3.
+
+inputs:
+  app-path:
+    description: Absolute or workspace-relative path to the built simulator .app.
+    required: true
+  expected-ios-major:
+    description: Positive simulator runtime major version, for example 27. The app must be rebuilt with the same DTSDKName major version.
+    required: true
+  survival-seconds:
+    description: Whole seconds from 1 through 120 that the launched process must remain alive.
+    required: false
+    default: '10'
+  log-path:
+    description: Path for launch metadata and failure logs. Defaults under RUNNER_TEMP.
+    required: false
+    default: ''
+
+outputs:
+  bundle-id:
+    description: Bundle identifier read from the built app, or unknown when it could not be determined.
+    value: ${{ steps.launch.outputs.bundle-id }}
+  launched-pid:
+    description: PID returned by simctl launch, or unknown before launch.
+    value: ${{ steps.launch.outputs.launched-pid }}
+  simulator-udid:
+    description: Simulator used for the launch smoke test, or unknown before selection.
+    value: ${{ steps.launch.outputs.simulator-udid }}
+  simulator-runtime:
+    description: Simulator runtime identifier used for the launch smoke test, or unknown before selection.
+    value: ${{ steps.launch.outputs.simulator-runtime }}
+  app-sdk-name:
+    description: DTSDKName embedded in the built app, or unknown when unreadable.
+    value: ${{ steps.launch.outputs.app-sdk-name }}
+  app-sdk-major:
+    description: Major iOS simulator SDK embedded in the built app, or unknown when unreadable.
+    value: ${{ steps.launch.outputs.app-sdk-major }}
+  classification:
+    description: launch-passed or launch-failed.
+    value: ${{ steps.launch.outputs.classification }}
+  failure-reason:
+    description: >-
+      One of invalid-input, invalid-app, sdk-mismatch, runtime-unavailable,
+      runtime-selection-failed, simulator-boot-failed, install-failed, launch-failed,
+      did-not-survive, unexpected-error, or none after a successful launch.
+    value: ${{ steps.launch.outputs.failure-reason }}
+  log-path:
+    description: Launch metadata and failure log path, or unknown when the requested path was rejected.
+    value: ${{ steps.launch.outputs.log-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install, launch, and verify process survival
+      id: launch
+      shell: bash
+      env:
+        APP_PATH: ${{ inputs.app-path }}
+        EXPECTED_IOS_MAJOR: ${{ inputs.expected-ios-major }}
+        SURVIVAL_SECONDS: ${{ inputs.survival-seconds }}
+        LAUNCH_LOG_PATH: ${{ inputs.log-path }}
+        XCRUN_BIN: /usr/bin/xcrun
+        PYTHON_BIN: /usr/bin/python3
+        PLIST_BUDDY_BIN: /usr/libexec/PlistBuddy
+        PS_BIN: /bin/ps
+        SLEEP_BIN: /bin/sleep
+      run: bash "$GITHUB_ACTION_PATH/launch.sh"
