@@ -24,9 +24,10 @@ Store compatibility.
 
 The action terminates and uninstalls the app after the smoke test. On failure,
 launch and survival failures write simulator diagnostics to the explicit
-`log-path` input. The `failure-reason` output distinguishes invalid inputs and products,
-SDK/runtime mismatch, runtime selection or boot failure, install failure,
-launch rejection, failure to survive, and unexpected command failure. Outputs
+`log-path` input. The `failure-reason` output is one of `invalid-input`, `invalid-app`,
+`sdk-mismatch`, `runtime-unavailable`, `runtime-selection-failed`,
+`simulator-boot-failed`, `install-failed`, `launch-failed`, `did-not-survive`,
+`unexpected-error`, or `none` after success. Outputs
 that could not yet be determined use `unknown`. Consumers should pass a known
 `log-path`, then add an `if: failure()` artifact-upload step for that same path
 with `if-no-files-found: ignore`. A failed composite action is not required to

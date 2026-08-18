@@ -264,17 +264,24 @@ collect_failure_log() {
   trap unexpected_failure ERR
   local failure_log
   local diagnostic_window_seconds=$((survival_seconds + 60))
+  local app_log=
   local simulator_log=
   for _ in 1 2 3 4 5; do
-    simulator_log="$("$xcrun_bin" simctl spawn "$simulator_udid" log show \
+    app_log="$("$xcrun_bin" simctl spawn "$simulator_udid" log show \
       --last "${diagnostic_window_seconds}s" \
       --style compact \
-      --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" 2>&1 || true)"
-    [[ -z "$simulator_log" ]] || break
+      --predicate "process == '$executable'" 2>/dev/null || true)"
+    [[ -z "$app_log" ]] || break
     "$sleep_bin" 1
   done
+  simulator_log="$("$xcrun_bin" simctl spawn "$simulator_udid" log show \
+    --last "${diagnostic_window_seconds}s" \
+    --style compact \
+    --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" 2>&1 || true)"
   failure_log="
-===== Simulator log for $executable =====
+===== App log for $executable =====
+$app_log
+===== Simulator diagnostics for $executable =====
 $simulator_log"
   # App-controlled log lines may look like GitHub workflow commands. Preserve
   # them in the artifact without replaying them through the runner console.
@@ -372,7 +379,8 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
   else
     process_status_code="$?"
   fi
-  if (( process_status_code > 1 )); then
+  if (( process_status_code > 1 )) \
+    || { (( process_status_code == 1 )) && [[ -n "$process_status" ]]; }; then
     record_failure unexpected-error \
       "Could not inspect the launched process after ${elapsed}s: $(single_line "$process_status")"
     collect_failure_log

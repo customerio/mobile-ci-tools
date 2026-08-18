@@ -40,7 +40,10 @@ outputs:
     description: launch-passed or launch-failed.
     value: ${{ steps.launch.outputs.classification }}
   failure-reason:
-    description: Machine-readable failure category, or none after a successful launch.
+    description: >-
+      One of invalid-input, invalid-app, sdk-mismatch, runtime-unavailable,
+      runtime-selection-failed, simulator-boot-failed, install-failed, launch-failed,
+      did-not-survive, unexpected-error, or none after a successful launch.
     value: ${{ steps.launch.outputs.failure-reason }}
   log-path:
     description: Launch metadata and failure log path, or unknown when the requested path was rejected.

@@ -92,6 +92,12 @@ elif [[ "$1 $2" == 'simctl launch' ]]; then
     echo 'io.customer.test.launch-smoke: 4242'
   fi
 elif [[ "$1 $2" == 'simctl spawn' ]]; then
+  if [[ "$*" != *" OR process == "* && -n "${STUB_EMPTY_APP_LOG_ATTEMPTS:-}" ]]; then
+    narrow_count="$(grep -Fxc "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke'" "$STUB_CALLS")"
+    if (( narrow_count <= STUB_EMPTY_APP_LOG_ATTEMPTS )); then
+      exit 0
+    fi
+  fi
   printf '%s\n' 'stubbed simulator failure log' '::warning title=forged-log::must-not-run'
 fi
 STUB
@@ -124,6 +130,8 @@ run_case() {
   local case_root="$temporary_root/$name"
   mkdir -p "$case_root"
   : > "$case_root/calls"
+  : > "$case_root/output"
+  : > "$case_root/summary"
   env \
     APP_PATH="$app_path" \
     EXPECTED_IOS_MAJOR=27 \
@@ -179,6 +187,15 @@ grep -Fxq 'simctl terminate SIM-27 io.customer.test.launch-smoke' "$temporary_ro
 grep -Fxq 'simctl uninstall SIM-27 io.customer.test.launch-smoke' "$temporary_root/process-exited/calls"
 grep -Fxq 'simctl shutdown SIM-27' "$temporary_root/process-exited/calls"
 
+if run_case process-exited-delayed-log \
+  STUB_PROCESS_ALIVE=false \
+  STUB_EMPTY_APP_LOG_ATTEMPTS=2; then
+  echo 'Expected an exited process with delayed logs to fail.' >&2
+  exit 1
+fi
+test "$(grep -Fxc "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke'" "$temporary_root/process-exited-delayed-log/calls")" -eq 3
+grep -Fq 'stubbed simulator failure log' "$temporary_root/process-exited-delayed-log/launch.log"
+
 if run_case process-inspection-failed STUB_PS_EXIT_STATUS=2; then
   echo 'Expected a process-inspection failure to fail.' >&2
   exit 1
@@ -188,6 +205,13 @@ grep -Fq 'stubbed ps inspection error' "$temporary_root/process-inspection-faile
 grep -Fq "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" \
   "$temporary_root/process-inspection-failed/calls"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-inspection-failed/launch.log"
+
+if run_case process-inspection-status-one-with-error STUB_PS_EXIT_STATUS=1; then
+  echo 'Expected ps status 1 with diagnostic output to be an infrastructure failure.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-status-one-with-error/output"
+grep -Fq 'stubbed ps inspection error' "$temporary_root/process-inspection-status-one-with-error/launch.log"
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
   echo 'Expected a rejected simctl launch to fail.' >&2
