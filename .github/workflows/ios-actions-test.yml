@@ -214,9 +214,11 @@ jobs:
           test "$CRASH_OUTCOME" = 'failure'
           grep -Fq 'exited, became non-runnable, or changed identity after' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
-          grep -Fq '===== Simulator log for' \
+          grep -Fq '===== App log for' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
-          grep -Fq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE' \
+          grep -Fq '===== Simulator diagnostics for' \
+            "$RUNNER_TEMP/ios-simulator-launch-crash.log"
+          grep -Eq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE([^_[:alnum:]]|$)' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
           grep -Fq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE_FATAL' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"

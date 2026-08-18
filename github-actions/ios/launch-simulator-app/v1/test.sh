@@ -110,6 +110,7 @@ if [[ -n "${STUB_PS_EXIT_STATUS:-}" ]]; then
   echo 'stubbed ps inspection error' >&2
   exit "$STUB_PS_EXIT_STATUS"
 fi
+[[ "${STUB_PS_SUCCESS_DIAGNOSTIC:-false}" != true ]] || echo 'stubbed successful ps diagnostic' >&2
 printf '%s %s\n' \
   "${STUB_PROCESS_STATE:-S}" \
   "${STUB_PROCESS_COMMAND:-/Users/runner/Library/Developer/CoreSimulator/Devices/${STUB_DEVICE_UDID:-SIM-27}/data/Containers/Bundle/Application/11111111-1111-1111-1111-111111111111/LaunchSmoke.app/LaunchSmoke}"
@@ -212,6 +213,13 @@ if run_case process-inspection-status-one-with-error STUB_PS_EXIT_STATUS=1; then
 fi
 grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-status-one-with-error/output"
 grep -Fq 'stubbed ps inspection error' "$temporary_root/process-inspection-status-one-with-error/launch.log"
+
+if run_case process-inspection-success-with-diagnostic STUB_PS_SUCCESS_DIAGNOSTIC=true; then
+  echo 'Expected ps status 0 with diagnostic output to be an infrastructure failure.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-success-with-diagnostic/output"
+grep -Fq 'stubbed successful ps diagnostic' "$temporary_root/process-inspection-success-with-diagnostic/launch.log"
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
   echo 'Expected a rejected simctl launch to fail.' >&2
@@ -527,15 +535,10 @@ if run_case invalid-log-path LAUNCH_LOG_PATH=$'/tmp/launch.log\ninjected=value';
   exit 1
 fi
 grep -Fq 'LAUNCH_LOG_PATH must be a single-line path' "$temporary_root/invalid-log-path/command.log"
-if [[ -e "$temporary_root/invalid-log-path/output" ]]; then
-  grep -Fxq 'classification=launch-failed' "$temporary_root/invalid-log-path/output"
-  grep -Fxq 'bundle-id=unknown' "$temporary_root/invalid-log-path/output"
-  grep -Fxq 'launched-pid=unknown' "$temporary_root/invalid-log-path/output"
-  grep -Fxq 'simulator-udid=unknown' "$temporary_root/invalid-log-path/output"
-else
-  echo 'A rejected log path did not publish its failure classification.' >&2
-  exit 1
-fi
+grep -Fxq 'classification=launch-failed' "$temporary_root/invalid-log-path/output"
+grep -Fxq 'bundle-id=unknown' "$temporary_root/invalid-log-path/output"
+grep -Fxq 'launched-pid=unknown' "$temporary_root/invalid-log-path/output"
+grep -Fxq 'simulator-udid=unknown' "$temporary_root/invalid-log-path/output"
 
 unwritable_parent="$temporary_root/unwritable-parent"
 touch "$unwritable_parent"
@@ -547,6 +550,23 @@ grep -Fq 'LAUNCH_LOG_PATH could not be created' "$temporary_root/unwritable-log-
 grep -Fxq 'classification=launch-failed' "$temporary_root/unwritable-log-path/output"
 grep -Fxq 'bundle-id=unknown' "$temporary_root/unwritable-log-path/output"
 grep -Fxq 'launched-pid=unknown' "$temporary_root/unwritable-log-path/output"
+
+default_unwritable_parent="$temporary_root/default-unwritable-parent"
+touch "$default_unwritable_parent"
+if env \
+  APP_PATH="$app_path" \
+  EXPECTED_IOS_MAJOR=27 \
+  SURVIVAL_SECONDS=1 \
+  LAUNCH_LOG_PATH= \
+  RUNNER_TEMP="$default_unwritable_parent" \
+  GITHUB_OUTPUT="$temporary_root/default-unwritable-output" \
+  GITHUB_STEP_SUMMARY="$temporary_root/default-unwritable-summary" \
+  "$BASH" "$script_dir/launch.sh" > "$temporary_root/default-unwritable-command.log" 2>&1; then
+  echo 'Expected an uncreatable default log path to fail.' >&2
+  exit 1
+fi
+grep -Fq 'The default launch log path could not be created' "$temporary_root/default-unwritable-command.log"
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/default-unwritable-output"
 
 default_log_root="$temporary_root/default-log-path"
 mkdir -p "$default_log_root"

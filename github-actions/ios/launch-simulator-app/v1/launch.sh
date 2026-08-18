@@ -11,7 +11,8 @@ sleep_bin="${SLEEP_BIN:-sleep}"
 app_path="${APP_PATH:-}"
 expected_ios_major="${EXPECTED_IOS_MAJOR:-}"
 survival_seconds="${SURVIVAL_SECONDS:-10}"
-log_path="${LAUNCH_LOG_PATH:-${RUNNER_TEMP:-/tmp}/ios-simulator-launch-${BASHPID:-$$}.log}"
+requested_log_path="${LAUNCH_LOG_PATH:-}"
+log_path="${requested_log_path:-${RUNNER_TEMP:-/tmp}/ios-simulator-launch-${BASHPID:-$$}.log}"
 bundle_id=unknown
 executable=unknown
 sdk_name=unknown
@@ -26,6 +27,7 @@ failure_recorded=false
 
 early_failure() {
   local message="$1"
+  local reason="${2:-invalid-input}"
   local annotation_message="${message//'%'/'%25'}"
   annotation_message="${annotation_message//$'\r'/'%0D'}"
   annotation_message="${annotation_message//$'\n'/'%0A'}"
@@ -39,7 +41,7 @@ early_failure() {
       echo "app-sdk-name=$sdk_name"
       echo "app-sdk-major=$app_sdk_major"
       echo 'classification=launch-failed'
-      echo 'failure-reason=invalid-input'
+      echo "failure-reason=$reason"
       echo 'log-path=unknown'
     } >> "$GITHUB_OUTPUT"
   fi
@@ -48,7 +50,7 @@ early_failure() {
       echo '## iOS simulator launch smoke'
       echo
       echo '**Classification:** launch-failed'
-      echo '**Failure category:** invalid-input'
+      echo "**Failure category:** $reason"
       echo '**Reason:**'
       echo
       echo "    $message"
@@ -62,6 +64,9 @@ if [[ "$log_path" == *$'\r'* || "$log_path" == *$'\n'* ]]; then
   early_failure 'LAUNCH_LOG_PATH must be a single-line path.'
 fi
 if ! mkdir -p "$(dirname "$log_path")" || ! : > "$log_path"; then
+  if [[ -z "$requested_log_path" ]]; then
+    early_failure 'The default launch log path could not be created.' unexpected-error
+  fi
   early_failure 'LAUNCH_LOG_PATH could not be created.'
 fi
 
@@ -387,6 +392,14 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
     exit 1
   fi
   read -r process_state process_command <<< "$process_status" || true
+  if (( process_status_code == 0 )) \
+    && [[ -n "$process_status" ]] \
+    && { [[ ! "$process_state" =~ ^[A-Z][A-Za-z+\<\>]*$ ]] || [[ "$process_command" != /* ]]; }; then
+    record_failure unexpected-error \
+      "Could not parse the process inspection result after ${elapsed}s: $(single_line "$process_status")"
+    collect_failure_log
+    exit 1
+  fi
   if [[ -z "$process_status" \
     || "$process_state" != [RSIU]* \
     || "${process_command##*/}" != "$executable" \
