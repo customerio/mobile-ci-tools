@@ -61,6 +61,9 @@ early_failure() {
 }
 
 if [[ "$log_path" == *$'\r'* || "$log_path" == *$'\n'* ]]; then
+  if [[ -z "$requested_log_path" ]]; then
+    early_failure 'The default launch log path must be a single-line path.' unexpected-error
+  fi
   early_failure 'LAUNCH_LOG_PATH must be a single-line path.'
 fi
 if ! mkdir -p "$(dirname "$log_path")" || ! : > "$log_path"; then
@@ -393,8 +396,10 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
   fi
   read -r process_state process_command <<< "$process_status" || true
   if (( process_status_code == 0 )) \
-    && [[ -n "$process_status" ]] \
-    && { [[ ! "$process_state" =~ ^[A-Z][A-Za-z+\<\>]*$ ]] || [[ "$process_command" != /* ]]; }; then
+    && { [[ -z "$process_status" ]] \
+    || [[ "$process_status" == *$'\n'* ]] \
+    || [[ ! "$process_state" =~ ^[A-Z][A-Za-z+\<\>]*$ ]] \
+    || [[ "$process_command" != /* ]]; }; then
     record_failure unexpected-error \
       "Could not parse the process inspection result after ${elapsed}s: $(single_line "$process_status")"
     collect_failure_log

@@ -110,10 +110,12 @@ if [[ -n "${STUB_PS_EXIT_STATUS:-}" ]]; then
   echo 'stubbed ps inspection error' >&2
   exit "$STUB_PS_EXIT_STATUS"
 fi
+[[ "${STUB_PS_EMPTY_SUCCESS:-false}" != true ]] || exit 0
 [[ "${STUB_PS_SUCCESS_DIAGNOSTIC:-false}" != true ]] || echo 'stubbed successful ps diagnostic' >&2
 printf '%s %s\n' \
   "${STUB_PROCESS_STATE:-S}" \
   "${STUB_PROCESS_COMMAND:-/Users/runner/Library/Developer/CoreSimulator/Devices/${STUB_DEVICE_UDID:-SIM-27}/data/Containers/Bundle/Application/11111111-1111-1111-1111-111111111111/LaunchSmoke.app/LaunchSmoke}"
+[[ "${STUB_PS_TRAILING_DIAGNOSTIC:-false}" != true ]] || echo 'stubbed trailing ps diagnostic' >&2
 STUB
 
 cat > "$stub_bin/sleep" <<'STUB'
@@ -220,6 +222,16 @@ if run_case process-inspection-success-with-diagnostic STUB_PS_SUCCESS_DIAGNOSTI
 fi
 grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-success-with-diagnostic/output"
 grep -Fq 'stubbed successful ps diagnostic' "$temporary_root/process-inspection-success-with-diagnostic/launch.log"
+
+for ps_case in process-inspection-empty-success process-inspection-trailing-diagnostic; do
+  ps_env=STUB_PS_EMPTY_SUCCESS=true
+  [[ "$ps_case" != process-inspection-trailing-diagnostic ]] || ps_env=STUB_PS_TRAILING_DIAGNOSTIC=true
+  if run_case "$ps_case" "$ps_env"; then
+    echo "Expected $ps_case to be an infrastructure failure." >&2
+    exit 1
+  fi
+  grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/$ps_case/output"
+done
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
   echo 'Expected a rejected simctl launch to fail.' >&2
@@ -539,6 +551,7 @@ grep -Fxq 'classification=launch-failed' "$temporary_root/invalid-log-path/outpu
 grep -Fxq 'bundle-id=unknown' "$temporary_root/invalid-log-path/output"
 grep -Fxq 'launched-pid=unknown' "$temporary_root/invalid-log-path/output"
 grep -Fxq 'simulator-udid=unknown' "$temporary_root/invalid-log-path/output"
+grep -Fxq 'failure-reason=invalid-input' "$temporary_root/invalid-log-path/output"
 
 unwritable_parent="$temporary_root/unwritable-parent"
 touch "$unwritable_parent"
@@ -550,9 +563,11 @@ grep -Fq 'LAUNCH_LOG_PATH could not be created' "$temporary_root/unwritable-log-
 grep -Fxq 'classification=launch-failed' "$temporary_root/unwritable-log-path/output"
 grep -Fxq 'bundle-id=unknown' "$temporary_root/unwritable-log-path/output"
 grep -Fxq 'launched-pid=unknown' "$temporary_root/unwritable-log-path/output"
+grep -Fxq 'failure-reason=invalid-input' "$temporary_root/unwritable-log-path/output"
 
 default_unwritable_parent="$temporary_root/default-unwritable-parent"
 touch "$default_unwritable_parent"
+current_case=default-unwritable-log-path
 if env \
   APP_PATH="$app_path" \
   EXPECTED_IOS_MAJOR=27 \
