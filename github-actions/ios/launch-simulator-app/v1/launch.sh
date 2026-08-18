@@ -235,13 +235,14 @@ fi
 
 collect_failure_log() {
   local failure_log
+  local diagnostic_window_seconds=$((survival_seconds + 60))
   failure_log="$({
     echo
     echo "===== Simulator log for $executable ====="
     "$xcrun_bin" simctl spawn "$simulator_udid" log show \
-      --last 2m \
+      --last "${diagnostic_window_seconds}s" \
       --style compact \
-      --predicate "process == '$executable'" || true
+      --predicate "process == '$executable' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" || true
   } 2>&1)"
   # App-controlled log lines may look like GitHub workflow commands. Preserve
   # them in the artifact without replaying them through the runner console.
@@ -340,7 +341,9 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
     process_status=
   fi
   if (( process_status_code > 1 )); then
-    fail unexpected-error "Could not inspect the launched process after ${elapsed}s."
+    record_failure unexpected-error "Could not inspect the launched process after ${elapsed}s."
+    collect_failure_log
+    exit 1
   fi
   read -r process_state process_command <<< "$process_status" || true
   if [[ -z "$process_status" \

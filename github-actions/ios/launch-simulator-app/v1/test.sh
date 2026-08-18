@@ -176,6 +176,9 @@ if run_case process-inspection-failed STUB_PS_EXIT_STATUS=2; then
   exit 1
 fi
 grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-failed/output"
+grep -Fq "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" \
+  "$temporary_root/process-inspection-failed/calls"
+grep -Fq 'stubbed simulator failure log' "$temporary_root/process-inspection-failed/launch.log"
 
 if run_case launch-rejected STUB_LAUNCH_FAILS=true; then
   echo 'Expected a rejected simctl launch to fail.' >&2
