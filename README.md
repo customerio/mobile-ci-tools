@@ -32,13 +32,17 @@ that could not yet be determined use `unknown`. Consumers should pass a known
 `log-path`, then add an `if: failure()` artifact-upload step for that same path
 with `if-no-files-found: ignore`. A failed composite action is not required to
 propagate its mapped outputs, so diagnostics upload must not depend on the
-`log-path` output. Use a distinct path for each invocation because the action
+`log-path` output. If the action uses `continue-on-error: true`, gate that upload
+on `steps.<id>.outcome == 'failure'` because the job-level `failure()` predicate
+remains false. Use a distinct path for each invocation because the action
 truncates its requested log before launch. The action intentionally does not replay app-controlled
 simulator logs through the GitHub command parser. Consumers must also set a
 job-level `timeout-minutes`, because CoreSimulator commands have no portable
 macOS command-level timeout. The requested runtime major must match the built
 app's normalized `DTSDKName` major. The app must use an Apple-conforming bundle
 identifier containing only ASCII letters, digits, hyphens, and periods.
+Hosted macOS runners provide the required Python 3, `xcrun`, `ps`, `sleep`, and
+`/usr/libexec/PlistBuddy` tools. A self-hosted runner must provide the same tools.
 
 The action assumes exclusive use of the selected simulator for the tested
 bundle identifier. Concurrent jobs sharing one simulator and bundle identifier

@@ -12,6 +12,14 @@ report_test_failure() {
 trap 'report_test_failure "$LINENO"' ERR
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for production_tool in \
+  'XCRUN_BIN: xcrun' \
+  'PYTHON_BIN: python3' \
+  'PLIST_BUDDY_BIN: /usr/libexec/PlistBuddy' \
+  'PS_BIN: ps' \
+  'SLEEP_BIN: sleep'; do
+  grep -Fq "$production_tool" "$script_dir/action.yml"
+done
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/launch-ios-simulator-app.XXXXXX")"
 trap 'rm -rf "$temporary_root"' EXIT
 
@@ -106,6 +114,14 @@ cat > "$stub_bin/ps" <<'STUB'
 #!/usr/bin/env bash
 printf 'ps %s\n' "$*" >> "$STUB_CALLS"
 [[ "${STUB_PROCESS_ALIVE:-true}" == true ]] || exit 1
+if [[ -n "${STUB_PS_ALIVE_POLLS:-}" ]]; then
+  count_file="$STUB_CALLS.ps-count"
+  count=0
+  [[ ! -f "$count_file" ]] || count="$(<"$count_file")"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  (( count <= STUB_PS_ALIVE_POLLS )) || exit 1
+fi
 if [[ -n "${STUB_PS_EXIT_STATUS:-}" ]]; then
   echo 'stubbed ps inspection error' >&2
   exit "$STUB_PS_EXIT_STATUS"
@@ -190,6 +206,14 @@ grep -Fxq 'simctl terminate SIM-27 io.customer.test.launch-smoke' "$temporary_ro
 grep -Fxq 'simctl uninstall SIM-27 io.customer.test.launch-smoke' "$temporary_root/process-exited/calls"
 grep -Fxq 'simctl shutdown SIM-27' "$temporary_root/process-exited/calls"
 
+if run_case process-exited-mid-window STUB_PS_ALIVE_POLLS=2; then
+  echo 'Expected an app that exits after two healthy polls to fail.' >&2
+  exit 1
+fi
+grep -Fq 'exited, became non-runnable, or changed identity after 3s of the 5s survival window' \
+  "$temporary_root/process-exited-mid-window/launch.log"
+grep -Fxq 'failure-reason=did-not-survive' "$temporary_root/process-exited-mid-window/output"
+
 if run_case process-exited-delayed-log \
   STUB_PROCESS_ALIVE=false \
   STUB_EMPTY_APP_LOG_ATTEMPTS=2; then
@@ -198,6 +222,15 @@ if run_case process-exited-delayed-log \
 fi
 test "$(grep -Fxc "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke'" "$temporary_root/process-exited-delayed-log/calls")" -eq 3
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-exited-delayed-log/launch.log"
+
+if run_case process-exited-log-exhausted \
+  STUB_PROCESS_ALIVE=false \
+  STUB_EMPTY_APP_LOG_ATTEMPTS=5; then
+  echo 'Expected an exited process with unavailable app logs to fail.' >&2
+  exit 1
+fi
+grep -Fq '===== App log for LaunchSmoke =====' "$temporary_root/process-exited-log-exhausted/launch.log"
+test "$(grep -Fxc "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke'" "$temporary_root/process-exited-log-exhausted/calls")" -eq 5
 
 if run_case process-inspection-failed STUB_PS_EXIT_STATUS=2; then
   echo 'Expected a process-inspection failure to fail.' >&2
@@ -411,12 +444,15 @@ run_case executable-with-space \
   STUB_PROCESS_COMMAND='/Users/runner/Library/Developer/CoreSimulator/Devices/SIM-27/data/Launch Smoke.app/Launch Smoke'
 grep -Fxq 'classification=launch-passed' "$temporary_root/executable-with-space/output"
 
-for invalid_executable in ' LaunchSmoke' 'LaunchSmoke '; do
-  if run_case invalid-executable-whitespace STUB_EXECUTABLE="$invalid_executable"; then
-    echo 'Expected executable whitespace at the boundary to fail.' >&2
+for whitespace_case in leading trailing; do
+  invalid_executable=' LaunchSmoke'
+  [[ "$whitespace_case" != trailing ]] || invalid_executable='LaunchSmoke '
+  case_name="invalid-executable-$whitespace_case-space"
+  if run_case "$case_name" STUB_EXECUTABLE="$invalid_executable"; then
+    echo "Expected executable $whitespace_case whitespace to fail." >&2
     exit 1
   fi
-  grep -Fxq 'failure-reason=invalid-app' "$temporary_root/invalid-executable-whitespace/output"
+  grep -Fxq 'failure-reason=invalid-app' "$temporary_root/$case_name/output"
 done
 
 if run_case bootstatus-rejected STUB_BOOTSTATUS_FAILS=true; then
@@ -447,6 +483,13 @@ fi
 grep -Fq 'APP_PATH is required' "$temporary_root/missing-app-input/launch.log"
 grep -Fxq 'classification=launch-failed' "$temporary_root/missing-app-input/output"
 grep -Fxq 'failure-reason=invalid-input' "$temporary_root/missing-app-input/output"
+
+if run_case option-shaped-app-path APP_PATH=-fixture; then
+  echo 'Expected an option-shaped app path to fail.' >&2
+  exit 1
+fi
+grep -Fq 'APP_PATH must not be option-shaped' "$temporary_root/option-shaped-app-path/launch.log"
+grep -Fxq 'failure-reason=invalid-input' "$temporary_root/option-shaped-app-path/output"
 
 if run_case invalid-survival SURVIVAL_SECONDS=0; then
   echo 'Expected an invalid survival window to fail.' >&2

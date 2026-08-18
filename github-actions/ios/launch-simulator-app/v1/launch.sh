@@ -171,6 +171,9 @@ trap unexpected_failure ERR
 if [[ -z "$app_path" ]]; then
   fail invalid-input 'APP_PATH is required.'
 fi
+if [[ "$app_path" == -* ]]; then
+  fail invalid-input 'APP_PATH must not be option-shaped.'
+fi
 if [[ ! -d "$app_path" || ! -f "$app_path/Info.plist" ]]; then
   fail invalid-input "Built simulator app is missing or has no Info.plist: $app_path"
 fi
