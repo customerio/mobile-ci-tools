@@ -26,7 +26,10 @@ failure_recorded=false
 
 early_failure() {
   local message="$1"
-  echo "::error title=iOS simulator launch smoke::$message"
+  local annotation_message="${message//'%'/'%25'}"
+  annotation_message="${annotation_message//$'\r'/'%0D'}"
+  annotation_message="${annotation_message//$'\n'/'%0A'}"
+  echo "::error title=iOS simulator launch smoke::$annotation_message"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
       echo "bundle-id=$bundle_id"
@@ -80,7 +83,8 @@ github_command_value() {
 record_failure() {
   # Expected simulator/tool failures are captured in conditionals below, so global errtrace would
   # incorrectly invoke ERR inside their command substitutions on Bash 3.2. Enable it only while
-  # publishing the already-classified result so a write/helper failure cannot leave empty outputs.
+  # publishing the already-classified result so a write/helper failure stops publication rather
+  # than letting the action continue with partially written outputs.
   set -E
   trap unexpected_failure ERR
   local reason="$1"
@@ -148,6 +152,9 @@ unexpected_failure() {
   trap - ERR
   if [[ "$failure_recorded" != true ]]; then
     record_failure unexpected-error "An unexpected command failed while running the launch smoke test."
+    if [[ "$installed" == true ]]; then
+      collect_failure_log
+    fi
   fi
   exit "$status"
 }
@@ -170,7 +177,7 @@ fi
 if ! raw_bundle_id="$("$plist_buddy_bin" -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" 2>&1)"; then
   fail invalid-app "The built app has no readable CFBundleIdentifier: $raw_bundle_id"
 fi
-if [[ ! "$raw_bundle_id" =~ ^[A-Za-z0-9.-]+$ ]]; then
+if [[ ! "$raw_bundle_id" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
   fail invalid-app 'The built app has an invalid CFBundleIdentifier.'
 fi
 bundle_id="$raw_bundle_id"
@@ -181,7 +188,7 @@ fi
 # Spaces are valid in an executable name. Restrict the remaining shape so the
 # value cannot inject GitHub outputs or an NSPredicate used for failure logs.
 executable_pattern='^[-A-Za-z0-9._]+([ ]+[-A-Za-z0-9._]+)*$'
-if [[ ! "$raw_executable" =~ $executable_pattern ]]; then
+if [[ "$raw_executable" == -* || ! "$raw_executable" =~ $executable_pattern ]]; then
   fail invalid-app 'The built app has an invalid CFBundleExecutable.'
 fi
 executable="$raw_executable"
@@ -202,7 +209,12 @@ if ! "$python_bin" --version >> "$log_path" 2>&1; then
   fail unexpected-error 'The configured Python interpreter is unavailable.'
 fi
 
-if ! selection="$("$xcrun_bin" simctl list devices available --json 2>> "$log_path" | "$python_bin" -c '
+if ! devices_json="$("$xcrun_bin" simctl list devices available --json 2>> "$log_path")"; then
+  fail unexpected-error 'simctl could not list available simulator devices.'
+fi
+
+selection_status=0
+selection="$(printf '%s\n' "$devices_json" | "$python_bin" -c '
 import json
 import re
 import sys
@@ -227,12 +239,16 @@ for runtime, devices in payload.get("devices", {}).items():
         candidates.append((state == "Booted", major, minor, device["udid"], state, runtime))
 
 if not candidates:
-    sys.exit("No available iPhone simulator matches the requested iOS runtime.")
+    print("No available iPhone simulator matches the requested iOS runtime.", file=sys.stderr)
+    raise SystemExit(3)
 candidates.sort(reverse=True)
 _, _, _, udid, state, runtime = candidates[0]
 print(f"{udid}\t{state}\t{runtime}")
-' "$expected_ios_major" 2>> "$log_path")"; then
+' "$expected_ios_major" 2>> "$log_path")" || selection_status="$?"
+if (( selection_status == 3 )); then
   fail runtime-unavailable "Could not select an iPhone simulator for iOS $expected_ios_major."
+elif (( selection_status != 0 )); then
+  fail unexpected-error 'The simulator device list could not be parsed.'
 fi
 
 IFS=$'\t' read -r simulator_udid initial_state simulator_runtime <<< "$selection"
@@ -351,14 +367,14 @@ for ((elapsed = 1; elapsed <= survival_seconds; elapsed++)); do
   "$sleep_bin" 1
   # BSD ps returns the full executable path for comm=. Bind that path to the
   # selected simulator and reject a crashed process waiting to be reaped.
-  if process_status="$("$ps_bin" -ww -p "$launched_pid" -o state= -o comm= 2>/dev/null)"; then
+  if process_status="$("$ps_bin" -ww -p "$launched_pid" -o state= -o comm= 2>&1)"; then
     process_status_code=0
   else
     process_status_code="$?"
-    process_status=
   fi
   if (( process_status_code > 1 )); then
-    record_failure unexpected-error "Could not inspect the launched process after ${elapsed}s."
+    record_failure unexpected-error \
+      "Could not inspect the launched process after ${elapsed}s: $(single_line "$process_status")"
     collect_failure_log
     exit 1
   fi

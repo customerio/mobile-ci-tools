@@ -39,7 +39,12 @@ cat > "$stub_bin/xcrun" <<'STUB'
 printf '%s\n' "$*" >> "$STUB_CALLS"
   if [[ "$1 $2 $3 $4" == 'simctl list devices available' ]]; then
   [[ "${STUB_LIST_WARNING:-false}" != true ]] || echo 'stubbed simctl warning' >&2
-  if [[ "${STUB_MALFORMED_SELECTION:-false}" == true ]]; then
+  if [[ "${STUB_LIST_FAILS:-false}" == true ]]; then
+    echo 'stubbed simctl list failure' >&2
+    exit 4
+  elif [[ "${STUB_LIST_MALFORMED_JSON:-false}" == true ]]; then
+    printf '%s\n' '{not-json'
+  elif [[ "${STUB_MALFORMED_SELECTION:-false}" == true ]]; then
     printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"state":"Shutdown","isAvailable":true,"name":"iPhone 17 Pro","udid":"INVALID UDID"}]}}'
   elif [[ "${STUB_BOOT_RACE_OTHER_OWNER:-false}" == true ]] \
     && [[ "$(grep -Fc 'simctl list devices available --json' "$STUB_CALLS")" -gt 1 ]]; then
@@ -95,7 +100,10 @@ cat > "$stub_bin/ps" <<'STUB'
 #!/usr/bin/env bash
 printf 'ps %s\n' "$*" >> "$STUB_CALLS"
 [[ "${STUB_PROCESS_ALIVE:-true}" == true ]] || exit 1
-[[ -z "${STUB_PS_EXIT_STATUS:-}" ]] || exit "$STUB_PS_EXIT_STATUS"
+if [[ -n "${STUB_PS_EXIT_STATUS:-}" ]]; then
+  echo 'stubbed ps inspection error' >&2
+  exit "$STUB_PS_EXIT_STATUS"
+fi
 printf '%s %s\n' \
   "${STUB_PROCESS_STATE:-S}" \
   "${STUB_PROCESS_COMMAND:-/Users/runner/Library/Developer/CoreSimulator/Devices/${STUB_DEVICE_UDID:-SIM-27}/data/Containers/Bundle/Application/11111111-1111-1111-1111-111111111111/LaunchSmoke.app/LaunchSmoke}"
@@ -176,6 +184,7 @@ if run_case process-inspection-failed STUB_PS_EXIT_STATUS=2; then
   exit 1
 fi
 grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/process-inspection-failed/output"
+grep -Fq 'stubbed ps inspection error' "$temporary_root/process-inspection-failed/launch.log"
 grep -Fq "simctl spawn SIM-27 log show --last 65s --style compact --predicate process == 'LaunchSmoke' OR process == 'SpringBoard' OR process == 'ReportCrash' OR process == 'launchd_sim'" \
   "$temporary_root/process-inspection-failed/calls"
 grep -Fq 'stubbed simulator failure log' "$temporary_root/process-inspection-failed/launch.log"
@@ -285,6 +294,20 @@ if run_case device-missing STUB_NO_DEVICES=true; then
 fi
 grep -Fq 'No available iPhone simulator matches' "$temporary_root/device-missing/launch.log"
 grep -Fxq 'failure-reason=runtime-unavailable' "$temporary_root/device-missing/output"
+
+if run_case simulator-list-failed STUB_LIST_FAILS=true; then
+  echo 'Expected a simctl device-list failure to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/simulator-list-failed/output"
+grep -Fq 'stubbed simctl list failure' "$temporary_root/simulator-list-failed/launch.log"
+
+if run_case malformed-device-json STUB_LIST_MALFORMED_JSON=true; then
+  echo 'Expected malformed simctl JSON to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/malformed-device-json/output"
+grep -Fq 'could not be parsed' "$temporary_root/malformed-device-json/launch.log"
 
 run_case selection-warning STUB_LIST_WARNING=true
 grep -Fq 'stubbed simctl warning' "$temporary_root/selection-warning/launch.log"
@@ -399,6 +422,19 @@ if run_case unexpected-command-failure STUB_SLEEP_FAILS=true; then
   exit 1
 fi
 grep -Fxq 'failure-reason=unexpected-error' "$temporary_root/unexpected-command-failure/output"
+grep -Fq 'stubbed simulator failure log' "$temporary_root/unexpected-command-failure/launch.log"
+
+if run_case option-shaped-bundle-id STUB_BUNDLE_ID=-invalid.bundle; then
+  echo 'Expected an option-shaped bundle identifier to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=invalid-app' "$temporary_root/option-shaped-bundle-id/output"
+
+if run_case option-shaped-executable STUB_EXECUTABLE=-LaunchSmoke; then
+  echo 'Expected an option-shaped executable to fail.' >&2
+  exit 1
+fi
+grep -Fxq 'failure-reason=invalid-app' "$temporary_root/option-shaped-executable/output"
 
 if run_case boot-race-other-owner STUB_BOOT_FAILS=true STUB_BOOT_RACE_OTHER_OWNER=true; then
   :
