@@ -136,10 +136,26 @@ jobs:
           ./tools/swiftformat_*/swiftformat --version
         shell: bash
 
+      # Both steps below assert the tool actually saw files. Without that, this job can pass
+      # having checked nothing: point either tool at an empty tree — a checkout that did not
+      # land, a wrong working directory, an `excluded:` rule that swallows everything — and it
+      # reports zero files, finds no violations and exits 0. A lint job that cannot fail is
+      # worse than no lint job, because it is trusted.
       - name: Run swiftformat. Fail if any errors.
-        run: make format && git diff --exit-code
+        run: |
+          set -euo pipefail
+          make format 2>&1 | tee swiftformat-output.txt
+          grep -qE '[0-9]+/[1-9][0-9]* files formatted' swiftformat-output.txt \
+            || { echo "::error::SwiftFormat reported no files; it checked nothing"; exit 1; }
+          rm -f swiftformat-output.txt
+          git diff --exit-code
         shell: bash
 
       - name: Run swiftlint. Fail if any errors.
-        run: make lint
+        run: |
+          set -euo pipefail
+          make lint 2>&1 | tee swiftlint-output.txt
+          grep -qE 'serious in [1-9][0-9]* files' swiftlint-output.txt \
+            || { echo "::error::SwiftLint reported no files; it checked nothing"; exit 1; }
+          rm -f swiftlint-output.txt
         shell: bash
