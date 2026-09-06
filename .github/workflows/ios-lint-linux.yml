@@ -7,9 +7,9 @@ name: iOS Lint (Linux)
 # ios-lint.yml rather than replacing it so that repos can move over one at a time; once every
 # caller is on this workflow, ios-lint.yml can be deleted.
 #
-# The job runs inside the official Swift image because SwiftLint's Linux build dynamically
-# loads libsourcekitdInProc.so, which ships only inside a Swift toolchain. SwiftFormat's Linux
-# build is statically linked and needs nothing.
+# SwiftLint's Linux build dynamically loads libsourcekitdInProc.so, which ships only inside a
+# Swift toolchain. The ubuntu-latest runner image already includes Swift, so no container is
+# needed. SwiftFormat's Linux build is statically linked and needs nothing at all.
 
 on:
   workflow_call:
@@ -19,35 +19,23 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
-      container-image:
-        description: >-
-          Container providing the Swift toolchain that SwiftLint's Linux build loads
-          sourcekitd from. Pin this to the Swift version the repo lints against.
-        required: false
-        type: string
-        default: 'swift:5.9'
 
 jobs:
   format-and-lint:
     name: Assert that code has been linted and formatted
     runs-on: ${{ inputs.runner-label }}
-    container: ${{ inputs.container-image }}
     steps:
-      - name: Install tools the Swift image does not ship
-        # swift:5.9 carries git and unzip but neither make nor curl.
-        run: |
-          set -euo pipefail
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends make curl
-        shell: bash
-
       - uses: actions/checkout@v4
 
-      - name: Mark the workspace safe for git
-        # The container runs as root while the checkout is owned by the runner user, so git
-        # refuses to operate on it ("dubious ownership") and `git diff --exit-code` below
-        # would fail for a reason that has nothing to do with formatting.
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Report the Swift toolchain SwiftLint will load sourcekitd from
+        # SwiftLint's Linux build dynamically loads libsourcekitdInProc.so, which ships only
+        # inside a Swift toolchain. The ubuntu-latest image already has one, so this job needs
+        # no container. Printed because a runner image dropping Swift would break the lint
+        # step with a fatal error that says nothing about why.
+        run: |
+          set -euo pipefail
+          swift --version
+          find /usr -name 'libsourcekitdInProc.so' 2>/dev/null | head -1
         shell: bash
 
       - name: Install binny to run lint tools
