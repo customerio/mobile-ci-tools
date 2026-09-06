@@ -1,0 +1,137 @@
+name: iOS Lint (Linux)
+
+# Same tools, same versions, same config files as ios-lint.yml — just not on a Mac.
+#
+# Linting needs no Xcode, no simulator and no iOS SDK, so holding one of the org's five
+# concurrent macOS slots to run it is pure queueing loss. This workflow exists alongside
+# ios-lint.yml rather than replacing it so that repos can move over one at a time; once every
+# caller is on this workflow, ios-lint.yml can be deleted.
+#
+# The job runs inside the official Swift image because SwiftLint's Linux build dynamically
+# loads libsourcekitdInProc.so, which ships only inside a Swift toolchain. SwiftFormat's Linux
+# build is statically linked and needs nothing.
+
+on:
+  workflow_call:
+    inputs:
+      runner-label:
+        description: 'Runner label to run on.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      container-image:
+        description: >-
+          Container providing the Swift toolchain that SwiftLint's Linux build loads
+          sourcekitd from. Pin this to the Swift version the repo lints against.
+        required: false
+        type: string
+        default: 'swift:5.9'
+
+jobs:
+  format-and-lint:
+    name: Assert that code has been linted and formatted
+    runs-on: ${{ inputs.runner-label }}
+    container: ${{ inputs.container-image }}
+    steps:
+      - name: Install tools the Swift image does not ship
+        # swift:5.9 carries git and unzip but neither make nor curl.
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends make curl
+        shell: bash
+
+      - uses: actions/checkout@v4
+
+      - name: Mark the workspace safe for git
+        # The container runs as root while the checkout is owned by the runner user, so git
+        # refuses to operate on it ("dubious ownership") and `git diff --exit-code` below
+        # would fail for a reason that has nothing to do with formatting.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        shell: bash
+
+      - name: Install binny to run lint tools
+        # Linux runners are x86_64. -f so a 404 fails here rather than writing an error page
+        # to ./binny and failing later inside `make format`.
+        run: |
+          set -euo pipefail
+          curl -fL --output binny https://github.com/customerio/binny/releases/download/latest/binny-linux-x86_64
+          chmod +x binny
+        shell: bash
+
+      - name: Pre-install the Linux builds of the lint tools
+        # binny-tools.yml pins exactly one downloadUrl per tool and those URLs point at the
+        # macOS assets, so left alone binny would install a macOS binary here and `make` would
+        # die with an exec format error. binny skips downloading a tool whose binary already
+        # sits at ./tools/<name>_<version>/<pathToBinaryInsideZip>, so seed that path with the
+        # Linux build. Versions are still read from binny-tools.yml, which stays the single
+        # source of truth for what we lint with.
+        run: |
+          set -euo pipefail
+
+          # Reads the `version:` belonging to a given `- name:` entry in binny-tools.yml.
+          tool_version() {
+            awk -v want="$1" '
+              /^[[:space:]]*-?[[:space:]]*name:/ { sub(/.*name:[[:space:]]*/, ""); current = $0 }
+              /^[[:space:]]*version:/ && current == want {
+                sub(/.*version:[[:space:]]*/, ""); print; exit
+              }
+            ' binny-tools.yml
+          }
+
+          seed() {
+            local name="$1" url_template="$2" name_in_zip="$3" name_binny_runs="$4"
+            local version download unzipped destination
+
+            version="$(tool_version "$name")"
+            if [ -z "$version" ]; then
+              echo "::error::Could not find a version for '$name' in binny-tools.yml" >&2
+              exit 1
+            fi
+
+            download="$(mktemp -d)"
+            curl -fsSL --output "$download/tool.zip" "${url_template//\{version\}/$version}"
+            unzipped="$download/unzipped"
+            unzip -q "$download/tool.zip" -d "$unzipped"
+
+            # The Linux archives do not always name the binary the way the macOS archive does
+            # (SwiftFormat ships `swiftformat_linux`), so copy by the in-zip name and land it
+            # on the path binny expects to execute.
+            destination="./tools/${name}_${version}/${name_binny_runs}"
+            mkdir -p "$(dirname "$destination")"
+            cp "$unzipped/$name_in_zip" "$destination"
+            chmod +x "$destination"
+            rm -rf "$download"
+
+            echo "Seeded $name $version for Linux at $destination"
+          }
+
+          seed swiftlint \
+            "https://github.com/realm/SwiftLint/releases/download/{version}/swiftlint_linux.zip" \
+            swiftlint swiftlint
+          seed swiftformat \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/{version}/swiftformat_linux.zip" \
+            swiftformat_linux swiftformat
+
+          # Confirm we really landed Linux binaries. A macOS build copied here would only
+          # fail much later, deep inside `make format`, with an opaque exec format error.
+          # Checking the ELF magic is instant; note that SwiftLint 0.52.4 has no cheap
+          # version subcommand (`swiftlint version` lints the whole tree), so do not be
+          # tempted to run it here just to see it work.
+          for binary in ./tools/swiftlint_*/swiftlint ./tools/swiftformat_*/swiftformat; do
+            magic="$(head -c 4 "$binary" | od -An -tx1 | tr -d ' \n')"
+            if [ "$magic" != "7f454c46" ]; then
+              echo "::error::$binary is not a Linux ELF binary (magic: $magic)" >&2
+              exit 1
+            fi
+          done
+          ./tools/swiftformat_*/swiftformat --version
+        shell: bash
+
+      - name: Run swiftformat. Fail if any errors.
+        run: make format && git diff --exit-code
+        shell: bash
+
+      - name: Run swiftlint. Fail if any errors.
+        run: make lint
+        shell: bash
