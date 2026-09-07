@@ -1,36 +1,36 @@
 name: iOS Lint (Linux)
 
-# Same tools, same versions, same config files as ios-lint.yml — just not on a Mac.
+# Same tools, same pinned versions, same config files as ios-lint.yml — just not on a Mac.
 #
 # Linting needs no Xcode, no simulator and no iOS SDK, so holding one of the org's five
 # concurrent macOS slots to run it is pure queueing loss. This workflow exists alongside
 # ios-lint.yml rather than replacing it so that repos can move over one at a time; once every
 # caller is on this workflow, ios-lint.yml can be deleted.
 #
-# The job runs inside the official Swift image (a Docker Official Image published by the Swift
-# project) because both tools need a Swift runtime that matches the one they were built
-# against. SwiftLint's Linux build dynamically loads libsourcekitdInProc.so, which ships only
-# inside a toolchain.
+# Why a container: SwiftLint's Linux build dlopens libsourcekitdInProc.so, which ships only
+# inside a Swift toolchain, so it cannot run on a bare runner at all. The image is a Docker
+# Official Image published by the Swift project.
 #
-# Do not "simplify" this by dropping the container and leaning on the Swift that ubuntu-latest
-# already ships. That was tried: the runner does provide a toolchain (Swift 6.3.3, with
-# libsourcekitdInProc.so in /usr/local/lib), but SwiftFormat 0.61.1 segfaults immediately
-# there, while the same binary on the same runner succeeds inside this image. /usr/local/lib
-# is on the default loader path, so the newer runtime appears to be picked up ahead of the one
-# the tool expects. The container is what keeps the runtime matched.
+# Known and unexplained: SwiftFormat 0.61.1 segfaults on a bare ubuntu-latest runner while the
+# same binary on the same runner succeeds inside this image. That is odd, because the Linux
+# SwiftFormat build is fully static — no PT_INTERP, no dynamic section — so no runtime
+# resolution is involved and the obvious explanations do not apply. The cause is not diagnosed.
+# It is recorded here only so the next person knows the container is load-bearing for reasons
+# beyond SwiftLint, and knows the reason is still an open question rather than a settled one.
 
 on:
   workflow_call:
     inputs:
       runner-label:
-        description: 'Runner label to run on.'
+        description: 'Runner label to run on. Must be x86_64 Linux.'
         required: false
         type: string
         default: 'ubuntu-latest'
       container-image:
         description: >-
-          Container providing the Swift toolchain that SwiftLint's Linux build loads
-          sourcekitd from. Pin this to the Swift version the repo lints against.
+          Image supplying the Swift toolchain that SwiftLint dlopens sourcekitd from. This must
+          match the toolchain the pinned SwiftLint in binny-tools.yml was built against, which
+          is unrelated to the Swift language version the repo's source targets.
         required: false
         type: string
         default: 'swift:5.9'
@@ -40,122 +40,194 @@ jobs:
     name: Assert that code has been linted and formatted
     runs-on: ${{ inputs.runner-label }}
     container: ${{ inputs.container-image }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Install tools the Swift image does not ship
         # swift:5.9 carries git and unzip but neither make nor curl.
         run: |
-          set -euo pipefail
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends make curl
         shell: bash
 
+      - name: Require an x86_64 runner
+        # Every asset below is x86_64, and runner-label is a caller input. SwiftLint publishes
+        # no arm64 Linux build for the pinned version, so failing here beats failing later with
+        # an exec format error.
+        run: |
+          if [ "$(uname -m)" != "x86_64" ]; then
+            echo "::error::This workflow needs an x86_64 Linux runner; got $(uname -m). SwiftLint publishes no arm64 Linux asset for the pinned version."
+            exit 1
+          fi
+        shell: bash
+
       - uses: actions/checkout@v4
+        with:
+          # The job only reads the tree. Leaving credentials in .git/config would hand them to
+          # the third-party binaries this job downloads and runs.
+          persist-credentials: false
 
       - name: Mark the workspace safe for git
-        # The container runs as root while the checkout is owned by the runner user, so git
-        # refuses to operate on it ("dubious ownership") and `git diff --exit-code` below
-        # would fail for a reason that has nothing to do with formatting.
+        # Required, and not redundant with checkout: checkout writes safe.directory into a
+        # temporary HOME scoped to its own git calls and removes it afterwards, so later steps
+        # do not inherit it. Without this, `git diff --exit-code` below fails on dubious
+        # ownership, because the container runs as root against a runner-owned checkout.
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
         shell: bash
 
       - name: Install binny to run lint tools
-        # Linux runners are x86_64. -f so a 404 fails here rather than writing an error page
-        # to ./binny and failing later inside `make format`.
         run: |
-          set -euo pipefail
-          curl -fL --output binny https://github.com/customerio/binny/releases/download/latest/binny-linux-x86_64
+          curl -fL --retry 3 --retry-connrefused --retry-delay 2 --max-time 300 \
+            --output binny https://github.com/customerio/binny/releases/download/latest/binny-linux-x86_64
           chmod +x binny
         shell: bash
 
-      - name: Pre-install the Linux builds of the lint tools
-        # binny-tools.yml pins exactly one downloadUrl per tool and those URLs point at the
-        # macOS assets, so left alone binny would install a macOS binary here and `make` would
-        # die with an exec format error. binny skips downloading a tool whose binary already
-        # sits at ./tools/<name>_<version>/<pathToBinaryInsideZip>, so seed that path with the
-        # Linux build. Versions are still read from binny-tools.yml, which stays the single
-        # source of truth for what we lint with.
-        run: |
-          set -euo pipefail
+      - name: Restore the Linux tool builds
+        # Versions are the only input that invalidates these, and binny's install paths are
+        # already version-stamped, so the config file's hash is the whole cache key.
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: lint-tools-linux-x86_64-${{ hashFiles('binny-tools.yml') }}
 
-          # Reads the `version:` belonging to a given `- name:` entry in binny-tools.yml.
-          tool_version() {
-            awk -v want="$1" '
-              /^[[:space:]]*-?[[:space:]]*name:/ { sub(/.*name:[[:space:]]*/, ""); current = $0 }
-              /^[[:space:]]*version:/ && current == want {
-                sub(/.*version:[[:space:]]*/, ""); print; exit
+      - name: Pre-install the Linux builds of the lint tools
+        # binny-tools.yml pins exactly one downloadUrl per tool and they point at the macOS
+        # assets, so left alone binny installs a macOS binary here and `make` dies with an exec
+        # format error. binny skips downloading a tool whose binary already sits at
+        # ./tools/<name>_<version>/<pathToBinaryInsideZip>, so seed that path with the Linux
+        # build. Versions and in-zip paths are still read from binny-tools.yml, which stays the
+        # single source of truth for what we lint with.
+        run: |
+          set -uo pipefail
+
+          # Reads one field of a named tool out of binny-tools.yml, tolerating quoted values
+          # and trailing whitespace.
+          tool_field() {
+            awk -v want="$1" -v field="$2" '
+              /^[[:space:]]*-?[[:space:]]*name:/ {
+                v = $0; sub(/.*name:[[:space:]]*/, "", v)
+                gsub(/"/, "", v); gsub(/[[:space:]]+$/, "", v)
+                current = v; next
+              }
+              current == want && index($0, field ":") {
+                v = $0; sub(".*" field ":[[:space:]]*", "", v)
+                gsub(/"/, "", v); gsub(/[[:space:]]+$/, "", v)
+                print v; exit
               }
             ' binny-tools.yml
           }
 
-          seed() {
-            local name="$1" url_template="$2" name_in_zip="$3" name_binny_runs="$4"
-            local version download unzipped destination
-
-            version="$(tool_version "$name")"
-            if [ -z "$version" ]; then
-              echo "::error::Could not find a version for '$name' in binny-tools.yml" >&2
-              exit 1
+          # Fails on a macOS build landing on Linux, and on an architecture mismatch. Magic
+          # alone is not enough: a macOS-vs-Linux mixup shows up in the magic, but an
+          # x86_64-vs-arm64 one does not, and both end as the same opaque exec format error.
+          assert_linux_x86_64() {
+            local path="$1" magic machine
+            magic="$(head -c 4 "$path" | od -An -tx1 | tr -d ' \n')"
+            if [ "$magic" != "7f454c46" ]; then
+              echo "::error::$path is not a Linux ELF binary (magic: $magic)" >&2
+              return 1
             fi
-
-            download="$(mktemp -d)"
-            curl -fsSL --output "$download/tool.zip" "${url_template//\{version\}/$version}"
-            unzipped="$download/unzipped"
-            unzip -q "$download/tool.zip" -d "$unzipped"
-
-            # The Linux archives do not always name the binary the way the macOS archive does
-            # (SwiftFormat ships `swiftformat_linux`), so copy by the in-zip name and land it
-            # on the path binny expects to execute.
-            destination="./tools/${name}_${version}/${name_binny_runs}"
-            mkdir -p "$(dirname "$destination")"
-            cp "$unzipped/$name_in_zip" "$destination"
-            chmod +x "$destination"
-            rm -rf "$download"
-
-            echo "Seeded $name $version for Linux at $destination"
+            machine="$(od -An -tu1 -j 18 -N 1 "$path" | tr -d ' \n')"
+            if [ "$machine" != "62" ]; then
+              echo "::error::$path is ELF but not x86-64 (e_machine: $machine)" >&2
+              return 1
+            fi
           }
 
-          seed swiftlint \
-            "https://github.com/realm/SwiftLint/releases/download/{version}/swiftlint_linux.zip" \
-            swiftlint swiftlint
-          seed swiftformat \
-            "https://github.com/nicklockwood/SwiftFormat/releases/download/{version}/swiftformat_linux.zip" \
-            swiftformat_linux swiftformat
+          # Prints the absolute path of the installed binary on stdout. Everything else goes
+          # to stderr, so the caller can capture the path with $(...).
+          seed() {
+            local name="$1" url_template="$2" name_in_zip="$3"
+            local version binary_path destination download
 
-          # Confirm we really landed Linux binaries. A macOS build copied here would only
-          # fail much later, deep inside `make format`, with an opaque exec format error.
-          # Checking the ELF magic is instant; note that SwiftLint 0.52.4 has no cheap
-          # version subcommand (`swiftlint version` lints the whole tree), so do not be
-          # tempted to run it here just to see it work.
-          for binary in ./tools/swiftlint_*/swiftlint ./tools/swiftformat_*/swiftformat; do
-            magic="$(head -c 4 "$binary" | od -An -tx1 | tr -d ' \n')"
-            if [ "$magic" != "7f454c46" ]; then
-              echo "::error::$binary is not a Linux ELF binary (magic: $magic)" >&2
-              exit 1
+            version="$(tool_field "$name" version)"
+            binary_path="$(tool_field "$name" pathToBinaryInsideZip)"
+            if [ -z "$version" ] || [ -z "$binary_path" ]; then
+              echo "::error::binny-tools.yml has no version/pathToBinaryInsideZip for '$name'" >&2
+              return 1
             fi
-          done
-          ./tools/swiftformat_*/swiftformat --version
+            if ! printf '%s' "$version" | grep -qE '^[0-9]+(\.[0-9]+)*$'; then
+              echo "::error::'$name' version '$version' is not a version number; binny would install to a path it never reads" >&2
+              return 1
+            fi
+
+            destination="./tools/${name}_${version}/${binary_path}"
+            if [ -x "$destination" ]; then
+              echo "$name $version already present (cache hit)" >&2
+            else
+              download="$(mktemp -d)"
+              curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 --max-time 600 \
+                --output "$download/tool.zip" "${url_template//\{version\}/$version}"
+              unzip -q "$download/tool.zip" -d "$download/unzipped"
+              mkdir -p "$(dirname "$destination")"
+              # The Linux archives do not always name the binary the way the macOS archive
+              # does (SwiftFormat ships `swiftformat_linux`), so copy by the in-zip name and
+              # land it on the path binny will execute.
+              cp "$download/unzipped/$name_in_zip" "$destination"
+              chmod +x "$destination"
+              rm -rf "$download"
+              echo "Seeded $name $version for Linux at $destination" >&2
+            fi
+
+            assert_linux_x86_64 "$destination" || return 1
+            printf '%s' "$PWD/${destination#./}"
+          }
+
+          swiftlint_bin="$(seed swiftlint \
+            'https://github.com/realm/SwiftLint/releases/download/{version}/swiftlint_linux.zip' \
+            swiftlint)" || exit 1
+          swiftformat_bin="$(seed swiftformat \
+            'https://github.com/nicklockwood/SwiftFormat/releases/download/{version}/swiftformat_linux.zip' \
+            swiftformat_linux)" || exit 1
+
+          # SwiftFormat is static and cannot have a runtime problem, so just confirm the binary
+          # we landed really is the pinned version rather than printing it and moving on.
+          expected="$(tool_field swiftformat version)"
+          reported="$("$swiftformat_bin" --version)"
+          if [ "$reported" != "$expected" ]; then
+            echo "::error::SwiftFormat reports $reported but binny-tools.yml pins $expected"
+            exit 1
+          fi
+          echo "SwiftFormat $reported verified"
+
+          # SwiftLint is the one that can fail at runtime, since it dlopens sourcekitd from the
+          # container's toolchain. Run it in an empty directory: that exercises the dlopen and
+          # stops at file discovery, so it costs nothing. It has no cheap version subcommand —
+          # `swiftlint version` and `--version` both lint the entire tree in 0.52.4 — so do not
+          # be tempted to swap this for one.
+          # Finding no files is the expected outcome and exits non-zero, so capture the output
+          # and inspect it rather than piping — under pipefail SwiftLint's exit code would
+          # outrank a successful grep and fail this check on a healthy binary.
+          probe="$(mktemp -d)"
+          probe_output="$( cd "$probe" && "$swiftlint_bin" lint 2>&1 || true )"
+          rm -rf "$probe"
+          if ! printf '%s' "$probe_output" | grep -q 'No lintable files found'; then
+            echo "::error::SwiftLint did not start cleanly. Its Linux build dlopens libsourcekitdInProc.so from the container image, so container-image may not match the toolchain it was built against."
+            printf '%s\n' "$probe_output" | tail -5
+            exit 1
+          fi
+          echo "SwiftLint $(tool_field swiftlint version) starts and loads sourcekitd"
         shell: bash
 
       # Both steps below assert the tool actually saw files. Without that, this job can pass
       # having checked nothing: point either tool at an empty tree — a checkout that did not
-      # land, a wrong working directory, an `excluded:` rule that swallows everything — and it
-      # reports zero files, finds no violations and exits 0. A lint job that cannot fail is
-      # worse than no lint job, because it is trusted.
+      # land, a wrong working directory, an `excluded:` rule that swallows everything — and
+      # SwiftFormat reports zero files and exits 0. A lint job that cannot fail is worse than
+      # no lint job, because it is trusted. Scratch output goes to RUNNER_TEMP so a failing
+      # step does not leave a root-owned file in the tree.
       - name: Run swiftformat. Fail if any errors.
         run: |
-          set -euo pipefail
-          make format 2>&1 | tee swiftformat-output.txt
-          grep -qE '[0-9]+/[1-9][0-9]* files formatted' swiftformat-output.txt \
+          make format 2>&1 | tee "$RUNNER_TEMP/swiftformat-output.txt"
+          grep -qE '[0-9]+/[1-9][0-9]* files formatted' "$RUNNER_TEMP/swiftformat-output.txt" \
             || { echo "::error::SwiftFormat reported no files; it checked nothing"; exit 1; }
-          rm -f swiftformat-output.txt
           git diff --exit-code
         shell: bash
 
       - name: Run swiftlint. Fail if any errors.
         run: |
-          set -euo pipefail
-          make lint 2>&1 | tee swiftlint-output.txt
-          grep -qE 'serious in [1-9][0-9]* files' swiftlint-output.txt \
+          make lint 2>&1 | tee "$RUNNER_TEMP/swiftlint-output.txt"
+          # `file` is singular when exactly one file is linted, so `files?`.
+          grep -qE 'serious in [1-9][0-9]* files?' "$RUNNER_TEMP/swiftlint-output.txt" \
             || { echo "::error::SwiftLint reported no files; it checked nothing"; exit 1; }
-          rm -f swiftlint-output.txt
         shell: bash
