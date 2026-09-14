@@ -193,9 +193,14 @@ jobs:
 
           # SwiftLint is the one that can fail at runtime, since it dlopens sourcekitd from the
           # container's toolchain. Run it in an empty directory: that exercises the dlopen and
-          # stops at file discovery, so it costs nothing. It has no cheap version subcommand —
-          # `swiftlint version` and `--version` both lint the entire tree in 0.52.4 — so do not
-          # be tempted to swap this for one.
+          # stops at file discovery, so it costs nothing.
+          #
+          # Do not swap this for a version check, and be aware the two builds disagree about
+          # what one even does. On macOS `swiftlint version` prints the version and exits
+          # immediately; the 0.52.4 Linux build ignores the subcommand and lints the whole tree
+          # instead. sourcekitd is loaded at startup either way, so on Linux a version check
+          # would in fact catch a mismatched container — it would just pay a full lint to do
+          # it, which is exactly what this probe avoids.
           # Finding no files is the expected outcome and exits non-zero, so capture the output
           # and inspect it rather than piping — under pipefail SwiftLint's exit code would
           # outrank a successful grep and fail this check on a healthy binary.
