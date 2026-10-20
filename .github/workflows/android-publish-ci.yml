@@ -2,14 +2,18 @@ name: android-publish plugin CI
 
 # Build + validate the publishing plugin on every change to it, so breaking changes are caught on
 # the PR rather than at release time or in a consumer (jist / customerio-android).
+# Also runs when the setup-android composite changes: this is the only CI in this repository that
+# exercises it, and jist consumes it @main.
 on:
   pull_request:
     paths:
       - 'gradle-plugins/android-publish/**'
+      - 'github-actions/android/setup-android/**'
   push:
     branches: [main]
     paths:
       - 'gradle-plugins/android-publish/**'
+      - 'github-actions/android/setup-android/**'
 
 jobs:
   build:
@@ -18,7 +22,7 @@ jobs:
       run:
         working-directory: gradle-plugins/android-publish
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Android
         uses: ./github-actions/android/setup-android/v1

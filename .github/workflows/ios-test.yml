@@ -44,7 +44,7 @@ jobs:
     env:
       CODECOV_UPLOAD_TOKEN: ${{ secrets.CODECOV_UPLOAD_TOKEN }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     # Xcode 26.x is a floor, not a preference: SPM needs Swift 6.1+ to parse firebase-ios-sdk's
     # manifest (trailing commas in call argument lists). Do not lower the default below 26.
@@ -64,7 +64,7 @@ jobs:
         bundler-cache: true # install dependencies in Gemfile, including Fastlane.
 
     - name: Run tests 
-      uses: maierj/fastlane-action@5a3b971aaa26776459bb26894d6c1a1a84a311a7 # v3.1.0
+      uses: maierj/fastlane-action@182983d8f94bad9884001c03c1c2786f4c7165ed # v3.2.0
       with:
         lane: 'scan'
 
@@ -76,7 +76,7 @@ jobs:
       if: env.CODECOV_UPLOAD_TOKEN != ''
   
     - name: Upload code coverage report 
-      uses: codecov/codecov-action@0f8570b1a125f4937846a11fcfa3bcd548bd8c97 # v4.6.0
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_UPLOAD_TOKEN }} 
       with: 
@@ -86,18 +86,18 @@ jobs:
       if: env.CODECOV_UPLOAD_TOKEN != '' 
 
     - name: Upload test report 
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: xcode-test-report
         path: test-report.*
       if: ${{ always() }}
       
     - name: Publish test results
-      uses: mikepenz/action-junit-report@db71d41eb79864e25ab0337e395c352e84523afe  # v4.3.1
+      uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
       with:
         check_name: XCode macOS tests - Results
         report_paths: test-report.xml
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         fail_on_failure: true
         require_tests: true
       if: ${{ always() }} # if running tests fails, we still want to parse the test results

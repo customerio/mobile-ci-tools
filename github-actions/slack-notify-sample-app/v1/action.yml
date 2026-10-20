@@ -75,7 +75,7 @@ runs:
 
     - name: Send Slack Notification on Success
       if: ${{ inputs.build_status == 'success' && env.slack_channel != '' }}
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
       with:
         webhook: ${{ inputs.slack_webhook_url }}
         webhook-type: incoming-webhook
@@ -100,7 +100,7 @@ runs:
 
     - name: Send Slack Notification on Failure
       if: ${{ inputs.build_status != 'success' && env.slack_channel != '' }}
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
       with:
         webhook: ${{ inputs.slack_webhook_url }}
         webhook-type: incoming-webhook
