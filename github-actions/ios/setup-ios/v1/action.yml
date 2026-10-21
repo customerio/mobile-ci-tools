@@ -3,7 +3,7 @@ description: Setup CI with iOS development tools to compile and test iOS source 
 
 inputs:
   xcode-version:
-    description: 'Xcode version to select, e.g. "26.6" or "27.0". It must be installed on the runner image: macos-26 has Xcode 26.x only, and Xcode 27 is on the xcode-27 label (a GitHub preview image) for now. Leave empty only to deliberately use the image default.'
+    description: 'Xcode version to select, e.g. "26.6" or "27.0". It must be installed on the runner image: macos-26 has Xcode 26.x only, and Xcode 27 is on the xcode-27 label. Leave empty only to deliberately use the image default.'
     required: false
     default: '26.6'
 

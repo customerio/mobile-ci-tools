@@ -36,7 +36,7 @@ jobs:
         run: bash github-actions/ios/launch-simulator-app/v1/test.sh
 
   setup-ios-xcode-27:
-    # Xcode 27 is only on GitHub's preview xcode-27 image for now: no SLA, and jobs can queue.
+    # GitHub's Xcode 27 runner image; macos-26 has no Xcode 27.
     runs-on: xcode-27
     timeout-minutes: 15
     steps:

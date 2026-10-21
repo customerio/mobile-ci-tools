@@ -9,7 +9,7 @@ on:
         type: string
         default: 'macos-26'
       xcode-version:
-        description: 'Xcode version to select, e.g. "26.6" or "27.0". It must be installed on runner-label''s image: Xcode 27 is only on xcode-27 for now. Leave empty to use the image default.'
+        description: 'Xcode version to select, e.g. "26.6" or "27.0". It must be installed on runner-label''s image: Xcode 27 is on xcode-27. Leave empty to use the image default.'
         required: false
         type: string
         default: '26.6'
