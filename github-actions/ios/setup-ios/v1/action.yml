@@ -3,7 +3,7 @@ description: Setup CI with iOS development tools to compile and test iOS source 
 
 inputs:
   xcode-version:
-    description: 'Xcode version to select, e.g. "26.6". Leave empty only to deliberately use the image default — required on preview images such as xcode-27, where a single beta Xcode is installed and setup-xcode cannot resolve the version string.'
+    description: 'Xcode version to select, e.g. "26.6" or "27.0". It must be installed on the runner image: macos-26 has Xcode 26.x only, and Xcode 27 is on the xcode-27 label (a GitHub preview image) for now. Leave empty only to deliberately use the image default.'
     required: false
     default: '26.6'
 
@@ -11,9 +11,30 @@ runs:
   using: "composite"
   steps:
   # No `xcodebuild -downloadPlatform iOS` step: the macos-26 image already ships the iOS
-  # simulator runtimes we test against, so it only ever fetched one no job used.
+  # simulator runtimes we test against, so it only ever fetched one no job used. The xcode-27
+  # image ships only the iOS 27.0 runtime, which Xcode 27.0 and later can all drive.
   - name: Install XCode
     if: ${{ inputs.xcode-version != '' }}
     uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
     with:
       xcode-version: ${{ inputs.xcode-version }}
+
+  # setup-xcode runs `sudo xcode-select -s` without checking that it worked, and a DEVELOPER_DIR
+  # set by the caller overrides xcode-select anyway. Either way every later step would build with
+  # a different Xcode than the one requested, so compare the Xcode that xcrun resolves with the one
+  # setup-xcode chose (it exports that path as MD_APPLE_SDK_ROOT). Paths, not version strings, so
+  # ranges, betas and "latest" keep meaning whatever setup-xcode says they mean.
+  - name: Verify the selected Xcode is active
+    if: ${{ inputs.xcode-version != '' }}
+    shell: bash
+    run: |
+      set -euo pipefail
+      selected=$(cd -P "${MD_APPLE_SDK_ROOT:?setup-xcode did not export MD_APPLE_SDK_ROOT}" && pwd)
+      xcodebuild_path=$(xcrun --find xcodebuild) || { echo "::error::xcrun cannot find xcodebuild${DEVELOPER_DIR:+ (DEVELOPER_DIR=$DEVELOPER_DIR)}."; exit 1; }
+      developer_dir=${xcodebuild_path%/usr/bin/xcodebuild}
+      active=$(cd -P "${developer_dir%/Contents/Developer}" && pwd)
+      xcodebuild -version
+      if [ "$active" != "$selected" ]; then
+        echo "::error::setup-xcode selected $selected, but xcrun resolves $active${DEVELOPER_DIR:+ (DEVELOPER_DIR=$DEVELOPER_DIR)}."
+        exit 1
+      fi
