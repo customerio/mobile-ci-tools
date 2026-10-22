@@ -52,3 +52,42 @@ isolated simulators.
 The failure log contains the tested app's own unified-log output. Consumers
 should use short artifact retention and must not exercise fixtures that emit
 real customer profiles, device tokens, or other sensitive data.
+
+### Scheduled-run failure alerts to Slack
+
+`github-actions/slack-notify-scheduled-failure/v1` posts a failed **scheduled**
+run to `#squad-mobile-alerts`. Add it as the last step of every job in a
+scheduled workflow:
+
+```yaml
+      - name: Alert Slack on a failed scheduled run
+        if: failure() && github.event_name == 'schedule'
+        uses: customerio/mobile-ci-tools/github-actions/slack-notify-scheduled-failure/v1@main
+        with:
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          label: Inbox E2E # Optional. The job id is shown when it is empty.
+```
+
+| Input | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `slack_webhook_url` | yes | | A legacy Slack incoming webhook that honours the payload's `channel` field. Pass it from a secret. |
+| `label` | no | job id | Shown in the message, for example a suite name or a matrix value. |
+| `channel` | no | `#squad-mobile-alerts` | Channel name or ID to post to. |
+| `dry_run` | no | `'false'` | `'true'` writes the payload to the step summary and the log and posts nothing. |
+
+The message shows the repository, workflow, label (or job id), run attempt,
+short SHA and branch, and a link to that run attempt. The action posts only
+when `github.event_name` is `schedule`. For any other event it logs a notice
+and exits 0, so a mistaken caller `if:` still cannot post for pull request or
+manual runs. Keep the caller `if:` anyway so the step is skipped.
+
+Each job that runs the step posts once, so set `label` from the matrix value
+in matrix jobs. A job skipped because a job it `needs` failed runs no steps,
+so the alert comes from the job that failed. The payload is built with `jq`
+and posted by `slackapi/slack-github-action` with `errors: true`, so a
+rejected post marks the step as failed in the run.
+
+GitHub loads every action a job references during "Set up job", including
+steps whose `if:` is false. Every caller job therefore loads this action on
+every run. `action.yml` must stay loadable at `main`, as a composite action
+without `pre:` or `post:` steps.
