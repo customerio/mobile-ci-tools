@@ -1,0 +1,49 @@
+name: Slack alert for a failed scheduled run
+description: Post a failed scheduled workflow run to Slack. Runs for any other event post nothing and exit 0.
+
+inputs:
+  slack_webhook_url:
+    description: Legacy Slack incoming webhook URL, passed from a secret. The webhook must honour the payload's channel field.
+    required: true
+  label:
+    description: Optional label shown in the message, for example an E2E suite name. The job id is shown when it is empty.
+    required: false
+    default: ''
+  channel:
+    description: Slack channel to post to.
+    required: false
+    default: '#squad-mobile-alerts'
+  dry_run:
+    description: When 'true', write the payload to the step summary and the log and post nothing.
+    required: false
+    default: 'false'
+
+outputs:
+  payload-path:
+    description: Path to the JSON payload this run built. Empty when the event guard skipped the alert.
+    value: ${{ steps.prepare.outputs.payload-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare Slack alert
+      if: always()
+      id: prepare
+      shell: bash
+      env:
+        SLACK_ALERT_LABEL: ${{ inputs.label }}
+        SLACK_ALERT_CHANNEL: ${{ inputs.channel }}
+        SLACK_ALERT_DRY_RUN: ${{ inputs.dry_run }}
+        SLACK_ALERT_HAS_WEBHOOK: ${{ inputs.slack_webhook_url != '' }}
+      run: bash "$GITHUB_ACTION_PATH/prepare.sh"
+
+    # The event guard is repeated here so that a scheduled event is required
+    # even if prepare.sh reports post=true by mistake.
+    - name: Post Slack alert
+      if: always() && steps.prepare.outputs.post == 'true' && inputs.dry_run == 'false' && github.event_name == 'schedule'
+      uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+      with:
+        webhook: ${{ inputs.slack_webhook_url }}
+        webhook-type: incoming-webhook
+        payload-file-path: ${{ steps.prepare.outputs.payload-path }}
+        errors: true

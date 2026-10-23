@@ -1,0 +1,86 @@
+name: Slack actions
+
+# Never add a schedule trigger here. The guard check below relies on this
+# workflow running only for non-scheduled events.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/slack-actions-test.yml'
+      - 'github-actions/slack-notify-scheduled-failure/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/slack-actions-test.yml'
+      - 'github-actions/slack-notify-scheduled-failure/**'
+
+permissions:
+  contents: read
+
+jobs:
+  shell-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check shell syntax
+        run: |
+          for script in github-actions/slack-notify-scheduled-failure/v1/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Run shellcheck
+        run: shellcheck github-actions/slack-notify-scheduled-failure/v1/*.sh
+
+      - name: Test scheduled-failure alert
+        run: bash github-actions/slack-notify-scheduled-failure/v1/test.sh
+
+  macos-bash-tests:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test scheduled-failure alert with the macOS system Bash
+        run: /bin/bash github-actions/slack-notify-scheduled-failure/v1/test.sh
+
+  composite-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dry-run the composite action
+        id: dry-run
+        uses: ./github-actions/slack-notify-scheduled-failure/v1
+        with:
+          # A dry run never posts, so no webhook is passed.
+          slack_webhook_url: ''
+          label: CI dry run
+          dry_run: 'true'
+
+      - name: Verify the dry-run payload
+        env:
+          PAYLOAD_PATH: ${{ steps.dry-run.outputs.payload-path }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          jq -e --arg run_url "$RUN_URL" '
+            .channel == "#squad-mobile-alerts"
+            and (.text | contains("CI dry run"))
+            and (.text | contains("<\($run_url)|View run>"))
+          ' "$PAYLOAD_PATH"
+
+      - name: Run the composite action on a non-scheduled event
+        id: guard
+        uses: ./github-actions/slack-notify-scheduled-failure/v1
+        with:
+          # The event guard must skip before the post step. If it did not,
+          # the empty webhook would fail this step.
+          slack_webhook_url: ''
+          label: CI guard
+
+      - name: Verify the guard skipped the alert
+        env:
+          PAYLOAD_PATH: ${{ steps.guard.outputs.payload-path }}
+        run: test -z "$PAYLOAD_PATH"
+
