@@ -62,7 +62,7 @@ jobs:
           fi
         shell: bash
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The job only reads the tree. Leaving credentials in .git/config would hand them to
           # the third-party binaries this job downloads and runs.
@@ -86,7 +86,7 @@ jobs:
       - name: Restore the Linux tool builds
         # Versions are the only input that invalidates these, and binny's install paths are
         # already version-stamped, so the config file's hash is the whole cache key.
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tools
           key: lint-tools-linux-x86_64-${{ hashFiles('binny-tools.yml') }}
