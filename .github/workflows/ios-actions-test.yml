@@ -35,6 +35,26 @@ jobs:
       - name: Test simulator launch sentinel
         run: bash github-actions/ios/launch-simulator-app/v1/test.sh
 
+  setup-ios-xcode-27:
+    # GitHub's Xcode 27 runner image; macos-26 has no Xcode 27.
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Switch away from Xcode 27.0
+        run: bash github-actions/ios/setup-ios/v1/select-other-xcode.sh 27.0
+
+      - name: Smoke-test setup-ios with Xcode 27.0
+        uses: ./github-actions/ios/setup-ios/v1
+        with:
+          xcode-version: '27.0'
+
+      - name: Verify setup-ios switched to Xcode 27.0
+        run: |
+          xcodebuild -version
+          xcodebuild -version | grep -Eq '^Xcode 27\.0(\.|$)'
+
   macos-bash-tests:
     runs-on: macos-26
     timeout-minutes: 25
@@ -223,16 +243,35 @@ jobs:
           grep -Fq 'CIO_LAUNCH_SMOKE_CRASH_FIXTURE_FATAL' \
             "$RUNNER_TEMP/ios-simulator-launch-crash.log"
 
-      # Last on purpose: it switches the active Xcode for every later step. Nothing else in this
+      # Last on purpose: these switch the active Xcode for every later step. Nothing else in this
       # repository runs setup-ios, and every SDK repo consumes it @main.
+      - name: Switch away from setup-ios's default Xcode
+        id: other-xcode
+        # A separate assignment, so a failing helper fails the step instead of echo's status hiding it.
+        run: |
+          other_xcode=$(bash github-actions/ios/setup-ios/v1/select-other-xcode.sh 26.6)
+          echo "path=$other_xcode" >> "$GITHUB_OUTPUT"
+
       - name: Smoke-test setup-ios with its default Xcode
         uses: ./github-actions/ios/setup-ios/v1
 
-      - name: Verify setup-ios selected its default Xcode
+      - name: Verify setup-ios switched to its default Xcode
         # Keep in step with the xcode-version default in github-actions/ios/setup-ios/v1/action.yml.
         run: |
           xcodebuild -version
           xcodebuild -version | grep -Eq '^Xcode 26\.6(\.|$)'
+
+      - name: Smoke-test that setup-ios rejects a conflicting DEVELOPER_DIR
+        id: conflicting-developer-dir
+        continue-on-error: true
+        uses: ./github-actions/ios/setup-ios/v1
+        env:
+          DEVELOPER_DIR: ${{ steps.other-xcode.outputs.path }}/Contents/Developer
+
+      - name: Verify the conflicting DEVELOPER_DIR was rejected
+        env:
+          OUTCOME: ${{ steps.conflicting-developer-dir.outcome }}
+        run: test "$OUTCOME" = 'failure'
 
       - name: Upload simulator launch diagnostics
         if: failure()

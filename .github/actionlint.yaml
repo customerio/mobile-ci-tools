@@ -1,0 +1,5 @@
+self-hosted-runner:
+  labels:
+    # GitHub-hosted Xcode 27 label (generally available since 2026-10-15) that actionlint does not know yet.
+    # Remove this override after actionlint recognizes the hosted label.
+    - xcode-27
