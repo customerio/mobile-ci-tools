@@ -34,7 +34,7 @@ expect_post() {
 # The composite must keep its own event guard and post only a prebuilt file.
 current_case=action-definition
 grep -Fq "default: '#squad-mobile-alerts'" "$action_file"
-grep -Fq "if: steps.prepare.outputs.post == 'true' && inputs.dry_run == 'false' && github.event_name == 'schedule'" "$action_file"
+grep -Fq "if: always() && steps.prepare.outputs.post == 'true' && inputs.dry_run == 'false' && github.event_name == 'schedule'" "$action_file"
 grep -Fq 'uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0' "$action_file"
 # shellcheck disable=SC2016 # Matches a literal GitHub expression.
 grep -Fq 'payload-file-path: ${{ steps.prepare.outputs.payload-path }}' "$action_file"

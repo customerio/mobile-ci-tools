@@ -27,6 +27,7 @@ runs:
   using: composite
   steps:
     - name: Prepare Slack alert
+      if: always()
       id: prepare
       shell: bash
       env:
@@ -39,7 +40,7 @@ runs:
     # The event guard is repeated here so that a scheduled event is required
     # even if prepare.sh reports post=true by mistake.
     - name: Post Slack alert
-      if: steps.prepare.outputs.post == 'true' && inputs.dry_run == 'false' && github.event_name == 'schedule'
+      if: always() && steps.prepare.outputs.post == 'true' && inputs.dry_run == 'false' && github.event_name == 'schedule'
       uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
       with:
         webhook: ${{ inputs.slack_webhook_url }}

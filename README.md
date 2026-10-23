@@ -61,12 +61,21 @@ scheduled workflow:
 
 ```yaml
       - name: Alert Slack on a failed scheduled run
-        if: failure() && github.event_name == 'schedule'
+        timeout-minutes: 2
+        if: (failure() || cancelled()) && github.event_name == 'schedule'
         uses: customerio/mobile-ci-tools/github-actions/slack-notify-scheduled-failure/v1@main
         with:
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           label: Inbox E2E # Optional. The job id is shown when it is empty.
 ```
+
+Set explicit step timeouts whose total stays below the job timeout, including
+setup, evidence upload and the alert. For example, reserve 5 minutes of a
+60-minute job for evidence and notification. A test **step** timeout makes
+`failure()` true and leaves later steps able to run. A **job** timeout can stop
+all remaining steps; adding `cancelled()` does not guarantee an alert then.
+The condition also attempts an alert for a manually cancelled scheduled run.
+Runner loss or failure during job setup still requires monitoring outside the job.
 
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
