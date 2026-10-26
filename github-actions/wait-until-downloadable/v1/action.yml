@@ -1,0 +1,34 @@
+name: Wait until a published version is downloadable
+description: Poll a public package registry until one exact version of every listed package can be downloaded. Fails when the time budget runs out.
+
+inputs:
+  ecosystem:
+    description: "Registry to poll: maven (Maven Central), npm, pub (pub.dev) or cocoapods (CocoaPods CDN)."
+    required: true
+  version:
+    description: Exact release version, for example 5.0.0 or 3.14.2-beta.1. Dist-tags such as latest are rejected.
+    required: true
+  packages:
+    description: Packages to wait for, one per line. Maven packages are group:artifact.
+    required: true
+  timeout-minutes:
+    description: Whole minutes to wait before failing.
+    required: false
+    default: '60'
+
+runs:
+  using: composite
+  steps:
+    - name: Wait until every package is downloadable
+      shell: bash
+      env:
+        WAIT_ECOSYSTEM: ${{ inputs.ecosystem }}
+        WAIT_VERSION: ${{ inputs.version }}
+        WAIT_PACKAGES: ${{ inputs.packages }}
+        WAIT_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+      run: |
+        python3 -I "$GITHUB_ACTION_PATH/wait_until_downloadable.py" \
+          --ecosystem="$WAIT_ECOSYSTEM" \
+          --version="$WAIT_VERSION" \
+          --packages="$WAIT_PACKAGES" \
+          --timeout-minutes="$WAIT_TIMEOUT_MINUTES"
