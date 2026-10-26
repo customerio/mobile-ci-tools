@@ -115,8 +115,8 @@ def pom_coordinates(pom):
 class Registry:
     def __init__(self, base_url, version, deadline, workdir):
         self.base_url = base_url
-        # Plain HTTP is allowed only for an explicitly configured HTTP test registry.
-        self.protocols = "=https" if base_url.startswith("https://") else "=http,https"
+        # Plain HTTP, redirects included, only when the registry itself is HTTP (the local test registry).
+        self.protocols = "=http,https" if base_url.startswith("http://") else "=https"
         self.version = version
         self.deadline = deadline
         self.workdir = workdir

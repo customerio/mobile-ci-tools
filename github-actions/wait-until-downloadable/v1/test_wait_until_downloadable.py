@@ -243,6 +243,18 @@ class WaitUntilDownloadableTest(unittest.TestCase):
         self.assertEqual(secure.paths(), ["/sdk", "/redirect", "/archive.tgz"])
         self.assertEqual(self.registry.requests, [])
 
+    def test_http_registry_follows_http_redirects(self):
+        archive = b"package tarball"
+        integrity = "sha512-" + base64.b64encode(hashlib.sha512(archive).digest()).decode()
+        self.registry.route("/sdk", ok(self.npm_metadata("sdk", ["1.2.3"], self.registry.url + "/redirect", integrity)))
+        self.registry.route("/redirect", redirect("/archive.tgz"))
+        self.registry.route("/archive.tgz", ok(archive))
+
+        result = self.run_wait("npm", "1.2.3", "sdk")
+
+        self.assertExit(result, 0)
+        self.assertEqual(self.registry.paths(), ["/sdk", "/redirect", "/archive.tgz"])
+
     # pub
 
     def pub_metadata(self, versions, sha256):
