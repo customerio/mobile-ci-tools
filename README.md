@@ -81,9 +81,9 @@ that publishes a release and any job that installs that release.
 | `packages` | yes | | One per line. Maven packages are `group:artifact`. List every module the consumer resolves, including transitive modules from the same release. |
 | `timeout-minutes` | no | `60` | Whole minutes before the action fails. |
 
-The action requests the same URLs the package manager does, without cache
-busting. A package counts as downloadable only when the files name the
-requested package and version:
+The action requests the same URLs the package manager does, over HTTPS only
+(including redirects) and without cache busting. A package counts as downloadable
+only when the files name the requested package and version:
 
 - npm: the abbreviated packument lists the version, and the tarball matches `dist.integrity` (sha512).
 - pub: `/api/packages/<name>` lists the version, and the archive matches `archive_sha256`.
@@ -95,10 +95,8 @@ with backoff from 10 to 60 seconds. Each request is limited to 30 seconds and to
 the remaining budget. When the budget runs out, the action fails with one
 `::error::` that names each pending package and its last check, and writes a
 table to the step summary. Invalid input fails before any request is made. The
-action needs `python3` and `curl`, which hosted Ubuntu and macOS runners
-provide.
-
-Merge this shared action before updating callers that reference it at `@main`.
+action needs Python 3.9 or later as `python3`, and `curl`. Hosted Ubuntu and
+macOS runners provide both.
 
 ### Scheduled-run failure alerts to Slack
 

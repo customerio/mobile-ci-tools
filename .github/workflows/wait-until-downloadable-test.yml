@@ -27,7 +27,15 @@ jobs:
 
       # Exercise the system Python interpreter on both runner families.
       - name: Test against a local fake registry
-        run: /usr/bin/python3 -m unittest discover -s github-actions/wait-until-downloadable/v1 -v
+        run: |
+          /usr/bin/python3 --version
+          /usr/bin/python3 -m unittest discover -s github-actions/wait-until-downloadable/v1 -v
+
+      # The action uses PATH python3, which differs from the system Python on macOS.
+      - name: Test with the python3 on PATH
+        run: |
+          python3 --version
+          python3 -m unittest discover -s github-actions/wait-until-downloadable/v1 -v
 
   composite-smoke:
     runs-on: ubuntu-latest

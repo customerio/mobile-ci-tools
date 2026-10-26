@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import os
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -34,7 +35,7 @@ def redirect(path):
 class FakeRegistry:
     """Serves each route's responses in order, then keeps repeating the last one."""
 
-    def __init__(self):
+    def __init__(self, tls=False):
         self.routes = {}
         self.requests = []
         self._served = {}
@@ -50,6 +51,22 @@ class FakeRegistry:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
+        self.tls_files = None
+        self.ca_bundle = None
+        if tls:
+            # Disposable test certificate and key, trusted only by this test's curl.
+            self.tls_files = tempfile.TemporaryDirectory()
+            self.ca_bundle = Path(self.tls_files.name) / "cert.pem"
+            key = Path(self.tls_files.name) / "key.pem"
+            subprocess.run([
+                "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1",
+                "-keyout", str(key), "-out", str(self.ca_bundle),
+            ], check=True, capture_output=True)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(self.ca_bundle, key)
+            self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+            self.url = f"https://127.0.0.1:{self.server.server_port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def route(self, path, *responses):
@@ -61,6 +78,8 @@ class FakeRegistry:
     def close(self):
         self.server.shutdown()
         self.server.server_close()
+        if self.tls_files:
+            self.tls_files.cleanup()
 
     def _serve(self, handler):
         with self._lock:
@@ -78,7 +97,8 @@ class FakeRegistry:
         try:
             handler.send_response(response["status"])
             if "location" in response:
-                handler.send_header("Location", self.url + response["location"])
+                location = response["location"]
+                handler.send_header("Location", location if location.startswith(("http://", "https://")) else self.url + location)
             handler.send_header("Content-Length", str(len(body)))
             handler.end_headers()
             handler.wfile.write(body)
@@ -93,7 +113,8 @@ class WaitUntilDownloadableTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
-    def run_wait(self, ecosystem, version, packages, timeout_seconds="5", timeout_minutes=None):
+    def run_wait(self, ecosystem, version, packages, timeout_seconds="5", timeout_minutes=None, registry=None):
+        registry = registry or self.registry
         summary = Path(self.tmp.name) / "summary.md"
         if summary.exists():
             summary.unlink()
@@ -102,7 +123,7 @@ class WaitUntilDownloadableTest(unittest.TestCase):
             f"--ecosystem={ecosystem}",
             f"--version={version}",
             f"--packages={packages}",
-            f"--registry-url={self.registry.url}",
+            f"--registry-url={registry.url}",
             "--initial-backoff-seconds=0.05",
             "--max-backoff-seconds=0.2",
         ]
@@ -112,6 +133,8 @@ class WaitUntilDownloadableTest(unittest.TestCase):
             args.append(f"--timeout-minutes={timeout_minutes}")
         env = {key: value for key, value in os.environ.items() if "proxy" not in key.lower()}
         env["GITHUB_STEP_SUMMARY"] = str(summary)
+        if registry.ca_bundle:
+            env["CURL_CA_BUNDLE"] = str(registry.ca_bundle)
         started = time.monotonic()
         result = subprocess.run(args, capture_output=True, text=True, env=env, timeout=60)
         result.elapsed = time.monotonic() - started
@@ -181,6 +204,44 @@ class WaitUntilDownloadableTest(unittest.TestCase):
                 self.assertExit(result, 1)
                 self.assertIn("sdk", self.error_line(result))
                 self.assertIn(expected_text, self.error_line(result))
+
+    # HTTPS transport
+
+    def test_https_registry_rejects_http_archives_and_redirects(self):
+        secure = FakeRegistry(tls=True)
+        self.addCleanup(secure.close)
+        archive = b"package tarball"
+        integrity = "sha512-" + base64.b64encode(hashlib.sha512(archive).digest()).decode()
+        insecure_url = self.registry.url + "/archive.tgz"
+        self.registry.route("/archive.tgz", ok(archive))
+        secure.route("/redirect", redirect(insecure_url))
+        for label, archive_url in [("direct HTTP archive", insecure_url),
+                                   ("HTTPS redirect to HTTP", secure.url + "/redirect")]:
+            with self.subTest(case=label):
+                self.registry.requests.clear()
+                secure.route("/sdk", ok(self.npm_metadata("sdk", ["1.2.3"], archive_url, integrity)))
+
+                result = self.run_wait("npm", "1.2.3", "sdk", timeout_seconds="1.5", registry=secure)
+
+                self.assertExit(result, 1)
+                self.assertIn("archive", self.error_line(result))
+                self.assertIn("protocol", self.error_line(result).lower())
+                self.assertEqual(self.registry.requests, [])
+
+    def test_https_registry_follows_https_redirects(self):
+        secure = FakeRegistry(tls=True)
+        self.addCleanup(secure.close)
+        archive = b"package tarball"
+        integrity = "sha512-" + base64.b64encode(hashlib.sha512(archive).digest()).decode()
+        secure.route("/sdk", ok(self.npm_metadata("sdk", ["1.2.3"], secure.url + "/redirect", integrity)))
+        secure.route("/redirect", redirect("/archive.tgz"))
+        secure.route("/archive.tgz", ok(archive))
+
+        result = self.run_wait("npm", "1.2.3", "sdk", registry=secure)
+
+        self.assertExit(result, 0)
+        self.assertEqual(secure.paths(), ["/sdk", "/redirect", "/archive.tgz"])
+        self.assertEqual(self.registry.requests, [])
 
     # pub
 
