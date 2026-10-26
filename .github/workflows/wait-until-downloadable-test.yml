@@ -1,0 +1,68 @@
+name: Wait until downloadable action
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/wait-until-downloadable-test.yml'
+      - 'github-actions/wait-until-downloadable/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/wait-until-downloadable-test.yml'
+      - 'github-actions/wait-until-downloadable/**'
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Exercise the system Python interpreter on both runner families.
+      - name: Test against a local fake registry
+        run: |
+          /usr/bin/python3 --version
+          /usr/bin/python3 -m unittest discover -s github-actions/wait-until-downloadable/v1 -v
+
+      # The action uses PATH python3, which differs from the system Python on macOS.
+      - name: Test with the python3 on PATH
+        run: |
+          python3 --version
+          python3 -m unittest discover -s github-actions/wait-until-downloadable/v1 -v
+
+  composite-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Uses the live npm registry, so the version must already be published.
+      - name: Wait for an already published version
+        uses: ./github-actions/wait-until-downloadable/v1
+        with:
+          ecosystem: npm
+          version: '6.16.1'
+          packages: customerio-reactnative
+          timeout-minutes: '5'
+
+      - name: Pass an invalid timeout
+        id: invalid
+        continue-on-error: true
+        uses: ./github-actions/wait-until-downloadable/v1
+        with:
+          ecosystem: npm
+          version: '6.16.1'
+          packages: customerio-reactnative
+          timeout-minutes: '0'
+
+      - name: Verify the invalid input failed
+        env:
+          OUTCOME: ${{ steps.invalid.outcome }}
+        run: test "$OUTCOME" = 'failure'

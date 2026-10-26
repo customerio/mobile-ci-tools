@@ -53,6 +53,51 @@ The failure log contains the tested app's own unified-log output. Consumers
 should use short artifact retention and must not exercise fixtures that emit
 real customer profiles, device tokens, or other sensitive data.
 
+### Wait until a release is downloadable
+
+`github-actions/wait-until-downloadable/v1` polls a public registry until one
+exact version of every listed package can be downloaded. Run it between the job
+that publishes a release and any job that installs that release.
+
+```yaml
+  wait-for-registry:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 70 # Above the action's 60 minutes, so its report is not cut off.
+    steps:
+      - uses: customerio/mobile-ci-tools/github-actions/wait-until-downloadable/v1@main
+        with:
+          ecosystem: maven
+          version: ${{ needs.deploy.outputs.version }}
+          packages: |
+            io.customer.android:core
+            io.customer.android:datapipelines
+```
+
+| Input | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `ecosystem` | yes | | `maven` (Maven Central), `npm`, `pub` (pub.dev) or `cocoapods` (CocoaPods CDN). |
+| `version` | yes | | Exact release version, such as `5.0.0` or `3.14.2-beta.1`. Dist-tags such as `latest` are rejected. |
+| `packages` | yes | | One per line. Maven packages are `group:artifact`. List every module the consumer resolves, including transitive modules from the same release. |
+| `timeout-minutes` | no | `60` | Whole minutes before the action fails. |
+
+The action requests the same URLs the package manager does, over HTTPS only
+(including redirects) and without cache busting. A package counts as downloadable
+only when the files name the requested package and version:
+
+- npm: the abbreviated packument lists the version, and the tarball matches `dist.integrity` (sha512).
+- pub: `/api/packages/<name>` lists the version, and the archive matches `archive_sha256`.
+- Maven: the POM coordinates match. When the POM says Gradle metadata was published, the `.module` component must match too. The `.aar` or `.jar` must download and match the `.module` sha256 when one is listed.
+- CocoaPods: the CDN version index lists the version, and the podspec JSON names the pod and version.
+
+Missing files, other HTTP statuses, network errors and mismatches are retried
+with backoff from 10 to 60 seconds. Each request is limited to 30 seconds and to
+the remaining budget. When the budget runs out, the action fails with one
+`::error::` that names each pending package and its last check, and writes a
+table to the step summary. Invalid input fails before any request is made. The
+action needs Python 3.9 or later as `python3`, and `curl`. Hosted Ubuntu and
+macOS runners provide both.
+
 ### Scheduled-run failure alerts to Slack
 
 `github-actions/slack-notify-scheduled-failure/v1` posts a failed **scheduled**
