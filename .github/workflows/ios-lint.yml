@@ -8,11 +8,17 @@ on:
         required: false
         type: string
         default: 'macos-26'
+      timeout-minutes:
+        description: 'Maximum minutes the job may run before it is cancelled. The default is GitHub''s own limit of 360, so callers that do not set it see no change.'
+        required: false
+        type: number
+        default: 360
 
 jobs:
   format-and-lint:
     name: Assert that code has been linted and formatted
     runs-on: ${{ inputs.runner-label }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
