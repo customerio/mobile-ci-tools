@@ -84,6 +84,8 @@ finish() {
 label_pattern='^[A-Za-z0-9._-]+$'
 if [[ ! "$github_label" =~ $label_pattern ]]; then
   echo "::error title=macOS runner selection::github-label must be a runner label such as xcode-27, got '${github_label//$'\n'/ }'."
+  # No label output: the value is unsafe to write. The workflow falls back to the input as given.
+  write_output reason invalid-input
   exit 2
 fi
 
@@ -214,26 +216,46 @@ for repository in "${repository_list[@]}"; do
       finish api-error
     fi
     read -r -a run_id_list <<< "$run_ids"
+    # More active runs than one page holds means the repository is far busier than usual, so the pool is treated
+    # as busy instead of spending the call budget on further pages.
+    if ! run_total="$(jq -er '.total_count' "$response_file")"; then
+      note="The $run_status runs of $repository could not be read."
+      finish api-error
+    fi
+    if (( run_total > ${#run_id_list[@]} )); then
+      note="$repository has $run_total $run_status runs, more than one page, so the pool is treated as busy."
+      finish capacity
+    fi
     # The guarded expansion keeps an empty list safe under set -u in Bash 3.2.
     for run_id in ${run_id_list[@]+"${run_id_list[@]}"}; do
-      if ! api_get "/repos/$owner/$repository/actions/runs/$run_id/jobs?filter=latest&per_page=100"; then
-        finish api-error
-      fi
-      if ! counts="$(count_jobs)"; then
-        note="The jobs of $repository run $run_id could not be read."
-        finish api-error
-      fi
-      read -r run_running run_queued <<< "$counts"
-      running=$((running + run_running))
-      queued=$((queued + run_queued))
-      if (( queued > 0 )); then
-        note="Stopped early: a Mac job waited longer than ${queued_seconds}s, so counts may be partial."
-        finish queued
-      fi
-      if (( running >= running_threshold )); then
-        note="Stopped early: at least $running_threshold Mac jobs are running, so counts may be partial."
-        finish capacity
-      fi
+      page=1
+      while :; do
+        jobs_path="/repos/$owner/$repository/actions/runs/$run_id/jobs?filter=latest&per_page=100"
+        if (( page > 1 )); then
+          jobs_path="$jobs_path&page=$page"
+        fi
+        if ! api_get "$jobs_path"; then
+          finish api-error
+        fi
+        if ! counts="$(count_jobs)" || ! job_total="$(jq -er '.total_count' "$response_file")"; then
+          note="The jobs of $repository run $run_id could not be read."
+          finish api-error
+        fi
+        read -r run_running run_queued <<< "$counts"
+        running=$((running + run_running))
+        queued=$((queued + run_queued))
+        if (( queued > 0 )); then
+          note="Stopped early: a Mac job waited longer than ${queued_seconds}s, so counts may be partial."
+          finish queued
+        fi
+        if (( running >= running_threshold )); then
+          note="Stopped early: at least $running_threshold Mac jobs are running, so counts may be partial."
+          finish capacity
+        fi
+        # The call cap and time budget in api_get still bound this loop.
+        (( job_total > page * 100 )) || break
+        page=$((page + 1))
+      done
     done
   done
 done

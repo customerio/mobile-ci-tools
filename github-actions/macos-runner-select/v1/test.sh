@@ -293,5 +293,29 @@ if run_select empty-github-label SELECT_GITHUB_LABEL= > /dev/null; then
   echo "Expected an empty github-label to fail." >&2
   exit 1
 fi
+grep -qx 'reason=invalid-input' "$temporary_root/empty-github-label/output"
+if grep -q '^label=' "$temporary_root/empty-github-label/output"; then
+  echo "An invalid github-label was written as the label output." >&2
+  exit 1
+fi
+
+# Pagination: more active runs than one page treats the pool as busy without
+# reading further; a run with more jobs than one page has its next page read.
+fixtures="$(prepare many-runs)"
+jq -n '{total_count: 150, workflow_runs: [{id: 901}, {id: 902}]}' \
+  > "$fixtures/$(fixture_name "/repos/customerio/customerio-ios/actions/runs?status=queued&per_page=100")"
+run_select many-runs > /dev/null
+expect many-runs second-pool-macos capacity
+expect_calls many-runs 1
+
+fixtures="$(prepare paged-jobs)"
+write_runs "$fixtures" customerio-ios in_progress 801
+jq -n --argjson job "$(job in_progress xcode-27 'GitHub Actions' 300)" '{total_count: 101, jobs: [$job]}' \
+  > "$fixtures/$(fixture_name "/repos/customerio/customerio-ios/actions/runs/801/jobs?filter=latest&per_page=100")"
+jq -n --argjson job "$(job queued xcode-27 null 60)" '{total_count: 101, jobs: [$job]}' \
+  > "$fixtures/$(fixture_name "/repos/customerio/customerio-ios/actions/runs/801/jobs?filter=latest&per_page=100&page=2")"
+run_select paged-jobs > /dev/null
+expect paged-jobs second-pool-macos queued
+grep -q 'runs/801/jobs?filter=latest&per_page=100&page=2' "$temporary_root/paged-jobs/calls"
 
 echo "macos-runner-select tests passed"

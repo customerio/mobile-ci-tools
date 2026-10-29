@@ -160,7 +160,9 @@ overflow label, or run in a runner group other than `GitHub Actions`, are on the
 second pool and are not counted. For each repository the selector lists the
 `queued` and then the `in_progress` runs, then reads each run's jobs, and stops
 as soon as either signal fires. One selection makes 10 listing calls plus one
-call per active run, capped at 40. Each request is limited to 5 seconds and the
+call per active run (and one per further page of a run with more than 100
+jobs), capped at 40. A repository with more than 100 queued or running runs
+counts as `capacity` without further reads. Each request is limited to 5 seconds and the
 whole check to 20 seconds. The label, reason, counts and call count go to the
 step summary.
 
