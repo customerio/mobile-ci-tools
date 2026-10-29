@@ -34,10 +34,12 @@ jobs:
           xcode-version: ${{ inputs.xcode-version }}
 
       # Records the runner image, macOS and Xcode in the log and job summary, so a run on any image says what it
-      # used. Reporting only: a failed inspection must not fail lint.
+      # used. Reporting only: a failed inspection must not fail lint. The step limit bounds a hung simulator query,
+      # which has no command-level timeout.
       - name: Report the toolchain
         uses: customerio/mobile-ci-tools/github-actions/ios/report-toolchain/v1@main
         continue-on-error: true
+        timeout-minutes: 3
 
       - name: Install binny to run lint tools
         # arm64 asset, not x86_64: every macOS image is arm64, and the x86_64 binary only ran
