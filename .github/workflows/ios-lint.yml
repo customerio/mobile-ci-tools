@@ -13,6 +13,11 @@ on:
         required: false
         type: number
         default: 360
+      xcode-version:
+        description: 'Xcode version to select, e.g. "27.0". SwiftLint loads the selected Xcode''s toolchain, so pin it when the job can run on more than one image. Images differ in their default Xcode. Leave empty to use the image default, which is what callers that do not set it get.'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   format-and-lint:
@@ -21,6 +26,18 @@ jobs:
     timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Skips its steps when xcode-version is empty, so an unpinned job keeps the image default.
+      - name: Select Xcode
+        uses: customerio/mobile-ci-tools/github-actions/ios/setup-ios/v1@main
+        with:
+          xcode-version: ${{ inputs.xcode-version }}
+
+      # Records the runner image, macOS and Xcode in the log and job summary, so a run on any image says what it
+      # used. Reporting only: a failed inspection must not fail lint.
+      - name: Report the toolchain
+        uses: customerio/mobile-ci-tools/github-actions/ios/report-toolchain/v1@main
+        continue-on-error: true
 
       - name: Install binny to run lint tools
         # arm64 asset, not x86_64: every macOS image is arm64, and the x86_64 binary only ran
