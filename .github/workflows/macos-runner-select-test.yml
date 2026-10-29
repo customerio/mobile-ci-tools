@@ -1,0 +1,95 @@
+name: macOS runner select action
+
+# Ubuntu only: the selector runs on ubuntu-latest, and testing it must not take
+# the Mac slots it exists to protect.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/macos-runner-select.yml'
+      - '.github/workflows/macos-runner-select-test.yml'
+      - 'github-actions/macos-runner-select/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/macos-runner-select.yml'
+      - '.github/workflows/macos-runner-select-test.yml'
+      - 'github-actions/macos-runner-select/**'
+
+permissions:
+  contents: read
+
+jobs:
+  shell-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check shell syntax
+        run: |
+          for script in github-actions/macos-runner-select/v1/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Run shellcheck
+        run: shellcheck github-actions/macos-runner-select/v1/*.sh
+
+      - name: Test the selector against stubbed API responses
+        run: bash github-actions/macos-runner-select/v1/test.sh
+
+  # The reusable workflow loads this action from @main, so a PR exercises the
+  # action through its local path instead.
+  composite-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select with the switch off
+        id: switch-off
+        uses: ./github-actions/macos-runner-select/v1
+        with:
+          github-label: xcode-27
+          overflow-label: smoke-second-pool
+
+      - name: Select with the switch on and no token
+        id: no-token
+        uses: ./github-actions/macos-runner-select/v1
+        with:
+          enabled: 'true'
+          github-label: xcode-27
+          overflow-label: smoke-second-pool
+
+      # The mobile repositories are public, so this job's own token can read
+      # their runs. It checks the live API shape, not a decision. A fork PR
+      # would get the fork fallback, so it skips this.
+      - name: Select against the live API
+        id: live
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        uses: ./github-actions/macos-runner-select/v1
+        with:
+          enabled: 'true'
+          github-label: xcode-27
+          overflow-label: smoke-second-pool
+          token: ${{ github.token }}
+
+      - name: Verify the selections
+        env:
+          SWITCH_OFF_LABEL: ${{ steps.switch-off.outputs.label }}
+          SWITCH_OFF_REASON: ${{ steps.switch-off.outputs.reason }}
+          NO_TOKEN_LABEL: ${{ steps.no-token.outputs.label }}
+          NO_TOKEN_REASON: ${{ steps.no-token.outputs.reason }}
+        run: |
+          test "$SWITCH_OFF_LABEL" = 'xcode-27'
+          test "$SWITCH_OFF_REASON" = 'switch-off'
+          test "$NO_TOKEN_LABEL" = 'xcode-27'
+          test "$NO_TOKEN_REASON" = 'no-credentials'
+
+      - name: Verify the live selection read the API
+        if: steps.live.outcome == 'success'
+        env:
+          LIVE_REASON: ${{ steps.live.outputs.reason }}
+          LIVE_API_CALLS: ${{ steps.live.outputs.api-calls }}
+        run: |
+          [[ "$LIVE_REASON" =~ ^(free|capacity|queued)$ ]]
+          (( LIVE_API_CALLS > 0 ))

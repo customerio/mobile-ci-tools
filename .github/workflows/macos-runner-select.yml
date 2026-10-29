@@ -1,0 +1,99 @@
+name: macOS Runner Select
+
+# Picks the runner label for a caller's macOS job: GitHub's label, or the
+# second pool's label when GitHub's macOS pool is busy with mobile jobs. It runs
+# on ubuntu-latest so the check never takes a Mac slot, and it never fails the
+# caller: every error path returns the GitHub label. Release jobs must not call it.
+
+on:
+  workflow_call:
+    inputs:
+      enabled:
+        description: 'The switch, fed from vars.MACOS_OVERFLOW_ENABLED. Only the exact string ''true'' runs the overflow check, so callers that leave the variable unset see no change.'
+        required: false
+        type: string
+        default: 'false'
+      github-label:
+        description: 'GitHub-hosted runner label the job uses today, e.g. xcode-27.'
+        required: true
+        type: string
+      overflow-label:
+        description: 'Runner label of the second pool, fed from vars.MACOS_OVERFLOW_RUNNER_LABEL. Empty means the overflow check does not run.'
+        required: false
+        type: string
+        default: ''
+      running-threshold:
+        description: 'Overflow when this many mobile Mac jobs, or more, are running on GitHub''s pool. The org limit is 15, so 13 leaves 2 for other org repositories.'
+        required: false
+        type: number
+        default: 13
+      queued-seconds:
+        description: 'Overflow when a mobile Mac job has been queued on GitHub''s pool for longer than this.'
+        required: false
+        type: number
+        default: 30
+    secrets:
+      RUNNER_SELECT_APP_CLIENT_ID:
+        description: 'Client ID of the read-only GitHub App (Actions: read on the mobile repositories). Without it the GitHub label is used.'
+        required: false
+      RUNNER_SELECT_APP_PRIVATE_KEY:
+        description: 'Private key of the same GitHub App.'
+        required: false
+    outputs:
+      label:
+        description: 'Runner label for the macOS job''s runs-on.'
+        value: ${{ jobs.select.outputs.label }}
+      reason:
+        description: 'switch-off, fork, no-credentials, invalid-input, api-error, capacity, queued, or free.'
+        value: ${{ jobs.select.outputs.reason }}
+      running:
+        description: 'Mobile Mac jobs counted as running on GitHub''s pool.'
+        value: ${{ jobs.select.outputs.running }}
+      queued:
+        description: 'Mobile Mac jobs counted as queued there for longer than queued-seconds.'
+        value: ${{ jobs.select.outputs.queued }}
+
+jobs:
+  select:
+    name: Select macOS runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The App token does all the reading; this job needs nothing from GITHUB_TOKEN.
+    permissions: {}
+    env:
+      # Secrets cannot appear in step if: conditions, so their presence is read through env.
+      HAS_APP_CREDENTIALS: ${{ secrets.RUNNER_SELECT_APP_CLIENT_ID != '' && secrets.RUNNER_SELECT_APP_PRIVATE_KEY != '' }}
+      IS_FORK_PR: ${{ github.event.pull_request.number != null && github.event.pull_request.head.repo.full_name != github.repository }}
+    outputs:
+      # The fallbacks cover a selector step that failed or timed out before writing outputs.
+      label: ${{ steps.select.outputs.label || inputs.github-label }}
+      reason: ${{ steps.select.outputs.reason || 'api-error' }}
+      running: ${{ steps.select.outputs.running || '0' }}
+      queued: ${{ steps.select.outputs.queued || '0' }}
+    steps:
+      # Keep the repository list in step with the action's repositories default.
+      - name: Mint a read-only token for the mobile repositories
+        id: token
+        if: inputs.enabled == 'true' && env.HAS_APP_CREDENTIALS == 'true' && env.IS_FORK_PR != 'true'
+        timeout-minutes: 1
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RUNNER_SELECT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RUNNER_SELECT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: customerio-ios,customerio-expo-plugin,customerio-reactnative,customerio-flutter,customerio-ios-fcm
+          permission-actions: read
+
+      - name: Select the runner label
+        id: select
+        timeout-minutes: 2
+        continue-on-error: true
+        uses: customerio/mobile-ci-tools/github-actions/macos-runner-select/v1@main
+        with:
+          enabled: ${{ inputs.enabled }}
+          github-label: ${{ inputs.github-label }}
+          overflow-label: ${{ inputs.overflow-label }}
+          running-threshold: ${{ inputs.running-threshold }}
+          queued-seconds: ${{ inputs.queued-seconds }}
+          token: ${{ steps.token.outputs.token }}
