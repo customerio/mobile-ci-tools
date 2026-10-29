@@ -79,11 +79,13 @@ jobs:
           SWITCH_OFF_REASON: ${{ steps.switch-off.outputs.reason }}
           NO_TOKEN_LABEL: ${{ steps.no-token.outputs.label }}
           NO_TOKEN_REASON: ${{ steps.no-token.outputs.reason }}
+          # The fork check comes before the token check, so a fork PR gets the fork fallback.
+          NO_TOKEN_EXPECTED: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'fork' || 'no-credentials' }}
         run: |
           test "$SWITCH_OFF_LABEL" = 'xcode-27'
           test "$SWITCH_OFF_REASON" = 'switch-off'
           test "$NO_TOKEN_LABEL" = 'xcode-27'
-          test "$NO_TOKEN_REASON" = 'no-credentials'
+          test "$NO_TOKEN_REASON" = "$NO_TOKEN_EXPECTED"
 
       - name: Verify the live selection read the API
         if: steps.live.outcome == 'success'
