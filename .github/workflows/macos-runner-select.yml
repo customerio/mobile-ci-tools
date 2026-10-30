@@ -32,13 +32,6 @@ on:
         required: false
         type: number
         default: 30
-    secrets:
-      RUNNER_SELECT_APP_CLIENT_ID:
-        description: 'Client ID of the read-only GitHub App (Actions: read on the mobile repositories). Without it the GitHub label is used.'
-        required: false
-      RUNNER_SELECT_APP_PRIVATE_KEY:
-        description: 'Private key of the same GitHub App.'
-        required: false
     outputs:
       label:
         description: 'Runner label for the macOS job''s runs-on.'
@@ -58,12 +51,9 @@ jobs:
     name: Select macOS runner
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # The App token does all the reading; this job needs nothing from GITHUB_TOKEN.
+    # The mobile repositories are public, so the job's own token reads their runs
+    # and jobs with no scopes.
     permissions: {}
-    env:
-      # Secrets cannot appear in step if: conditions, so their presence is read through env.
-      HAS_APP_CREDENTIALS: ${{ secrets.RUNNER_SELECT_APP_CLIENT_ID != '' && secrets.RUNNER_SELECT_APP_PRIVATE_KEY != '' }}
-      IS_FORK_PR: ${{ github.event.pull_request.number != null && github.event.pull_request.head.repo.full_name != github.repository }}
     outputs:
       # The fallbacks cover a selector step that failed or timed out before writing outputs.
       label: ${{ steps.select.outputs.label || inputs.github-label }}
@@ -71,20 +61,6 @@ jobs:
       running: ${{ steps.select.outputs.running || '0' }}
       queued: ${{ steps.select.outputs.queued || '0' }}
     steps:
-      # Keep the repository list in step with the action's repositories default.
-      - name: Mint a read-only token for the mobile repositories
-        id: token
-        if: inputs.enabled == 'true' && env.HAS_APP_CREDENTIALS == 'true' && env.IS_FORK_PR != 'true'
-        timeout-minutes: 1
-        continue-on-error: true
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.RUNNER_SELECT_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RUNNER_SELECT_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: customerio-ios,customerio-expo-plugin,customerio-reactnative,customerio-flutter,customerio-ios-fcm
-          permission-actions: read
-
       - name: Select the runner label
         id: select
         timeout-minutes: 2
@@ -96,4 +72,4 @@ jobs:
           overflow-label: ${{ inputs.overflow-label }}
           running-threshold: ${{ inputs.running-threshold }}
           queued-seconds: ${{ inputs.queued-seconds }}
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ github.token }}

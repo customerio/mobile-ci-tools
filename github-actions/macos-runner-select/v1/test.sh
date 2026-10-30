@@ -12,17 +12,20 @@ mkdir -p "$stub_bin"
 # Serves API responses from $STUB_FIXTURES. The URL path and query map to a
 # file name with every character other than letters and digits turned into _.
 # A runs listing without a fixture is empty; any other missing fixture is a 404.
+# STUB_HTTP_STATUS and STUB_HEADER answer every call with that status and header.
 # Each call's arguments and stdin are logged so tests can count calls and check
 # that the token never reaches the command line.
 cat > "$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 output=""
+headers=""
 url=""
 args=("$@")
 while (( $# > 0 )); do
   case "$1" in
     --output) output="$2"; shift 2 ;;
-    --config|--connect-timeout|--max-time|--header) shift 2 ;;
+    --dump-header) headers="$2"; shift 2 ;;
+    --config|--connect-timeout|--max-time|--header|--write-out) shift 2 ;;
     *) url="$1"; shift ;;
   esac
 done
@@ -32,15 +35,26 @@ if [[ "${STUB_CURL_FAIL:-false}" == "true" ]]; then
   echo "curl: (28) Operation timed out" >&2
   exit 28
 fi
+respond() {
+  printf 'HTTP/2 %s\r\n%s\r\n\r\n' "$1" "${STUB_HEADER:-x-ratelimit-remaining: 999}" > "$headers"
+  printf '%s' "$1"
+}
+if [[ -n "${STUB_HTTP_STATUS:-}" ]]; then
+  printf '%s\n' '{"message":"stub"}' > "$output"
+  respond "$STUB_HTTP_STATUS"
+  exit 0
+fi
 path="${url#https://api.example.test}"
 fixture="$STUB_FIXTURES/$(printf '%s' "$path" | tr -c 'A-Za-z0-9' '_')"
 if [[ -f "$fixture" ]]; then
   cp "$fixture" "$output"
+  respond 200
 elif [[ "$path" == *"/actions/runs?status="* ]]; then
   printf '%s\n' '{"total_count":0,"workflow_runs":[]}' > "$output"
+  respond 200
 else
-  echo "curl: (22) The requested URL returned error: 404" >&2
-  exit 22
+  printf '%s\n' '{"message":"Not Found"}' > "$output"
+  respond 404
 fi
 STUB
 chmod +x "$stub_bin/curl"
@@ -244,6 +258,22 @@ fixtures="$(prepare missing-jobs)"
 write_runs "$fixtures" customerio-ios in_progress 404
 run_select missing-jobs
 expect missing-jobs xcode-27 api-error
+grep -Fq 'failed with HTTP 404' "$temporary_root/missing-jobs/summary"
+
+# A rate limit is named in the note, primary (no calls remaining) or secondary
+# (retry-after). Any other 403 is a plain failure.
+run_select rate-limited STUB_HTTP_STATUS=403 'STUB_HEADER=x-ratelimit-remaining: 0'
+expect rate-limited xcode-27 api-error
+expect_calls rate-limited 1
+grep -Fq 'was rate limited (HTTP 403)' "$temporary_root/rate-limited/summary"
+
+run_select secondary-rate-limit STUB_HTTP_STATUS=429 'STUB_HEADER=retry-after: 60'
+expect secondary-rate-limit xcode-27 api-error
+grep -Fq 'was rate limited (HTTP 429)' "$temporary_root/secondary-rate-limit/summary"
+
+run_select forbidden STUB_HTTP_STATUS=403
+expect forbidden xcode-27 api-error
+grep -Fq 'failed with HTTP 403' "$temporary_root/forbidden/summary"
 
 fixtures="$(prepare malformed-runs)"
 printf '%s\n' 'not json' > "$fixtures/$(fixture_name '/repos/customerio/customerio-ios/actions/runs?status=queued&per_page=100')"

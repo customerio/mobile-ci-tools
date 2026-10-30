@@ -151,13 +151,16 @@ fi
 now="${SELECT_NOW:-$(date +%s)}"
 deadline=$((SECONDS + total_seconds))
 response_file="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/macos-runner-select.XXXXXX")"
-trap 'rm -f "$response_file"' EXIT
+header_file="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/macos-runner-select.XXXXXX")"
+trap 'rm -f "$response_file" "$header_file"' EXIT
 
 # GETs one API path into $response_file. Fails when the call cap or the total
-# time budget is spent, or on any HTTP or network error. The token goes to curl
+# time budget is spent, or on any HTTP or network error. A rate-limit response
+# says so in the note, so those fallbacks can be counted. The token goes to curl
 # on stdin so it never appears in the process list.
 api_get() {
   local path="$1"
+  local status
   local remaining=$((deadline - SECONDS))
   if (( api_calls >= max_api_calls )); then
     note="Stopped at the cap of $max_api_calls API calls before a decision."
@@ -169,18 +172,32 @@ api_get() {
   fi
   local limit=$(( remaining < request_seconds ? remaining : request_seconds ))
   api_calls=$((api_calls + 1))
-  if ! printf 'header = "Authorization: Bearer %s"\n' "$token" | curl \
+  if ! status="$(printf 'header = "Authorization: Bearer %s"\n' "$token" | curl \
       --config - \
-      --silent --show-error --fail \
+      --silent --show-error \
       --connect-timeout "$limit" \
       --max-time "$limit" \
       --header 'Accept: application/vnd.github+json' \
       --header 'X-GitHub-Api-Version: 2022-11-28' \
+      --dump-header "$header_file" \
       --output "$response_file" \
-      "$api_url$path"; then
+      --write-out '%{http_code}' \
+      "$api_url$path")"; then
     note="GET $path failed."
     return 1
   fi
+  if [[ "$status" == 2?? ]]; then
+    return 0
+  fi
+  # GitHub answers a primary rate limit with 403 or 429 and no calls remaining,
+  # and a secondary one with a retry-after header.
+  if [[ "$status" == 403 || "$status" == 429 ]] \
+      && grep -qiE '^(x-ratelimit-remaining: *0[[:space:]]*|retry-after:.*)$' "$header_file"; then
+    note="GET $path was rate limited (HTTP $status)."
+  else
+    note="GET $path failed with HTTP $status."
+  fi
+  return 1
 }
 
 # Counts this run's mobile Mac jobs that are on GitHub's pool. A Mac job has a

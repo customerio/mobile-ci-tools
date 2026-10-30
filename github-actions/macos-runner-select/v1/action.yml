@@ -26,7 +26,7 @@ inputs:
     required: false
     default: customerio-ios,customerio-expo-plugin,customerio-reactnative,customerio-flutter,customerio-ios-fcm
   token:
-    description: Token with Actions read access to every listed repository. Empty means the GitHub label.
+    description: Token that can read the Actions runs of every listed repository. For public repositories the job's own token works with no scopes. Empty means the GitHub label.
     required: false
     default: ''
 

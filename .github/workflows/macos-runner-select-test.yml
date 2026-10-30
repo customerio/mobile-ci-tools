@@ -37,6 +37,23 @@ jobs:
       - name: Test the selector against stubbed API responses
         run: bash github-actions/macos-runner-select/v1/test.sh
 
+  # The reusable workflow gives its job no scopes. This checks that such a token
+  # still reads the runs and jobs of every mobile repository.
+  token-without-scopes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Read runs and jobs with a token that has no scopes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for repository in customerio-ios customerio-expo-plugin customerio-reactnative customerio-flutter customerio-ios-fcm; do
+            run_id="$(gh api "repos/customerio/$repository/actions/runs?per_page=1" --jq '.workflow_runs[0].id')"
+            gh api "repos/customerio/$repository/actions/runs/$run_id/jobs?filter=latest&per_page=1" --jq '.total_count' > /dev/null
+            echo "$repository: read run $run_id and its jobs."
+          done
+
   # The reusable workflow loads this action from @main, so a PR exercises the
   # action through its local path instead.
   composite-smoke:

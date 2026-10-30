@@ -116,9 +116,6 @@ jobs:
       enabled: ${{ vars.MACOS_OVERFLOW_ENABLED }}
       github-label: xcode-27
       overflow-label: ${{ vars.MACOS_OVERFLOW_RUNNER_LABEL }}
-    secrets:
-      RUNNER_SELECT_APP_CLIENT_ID: ${{ secrets.RUNNER_SELECT_APP_CLIENT_ID }}
-      RUNNER_SELECT_APP_PRIVATE_KEY: ${{ secrets.RUNNER_SELECT_APP_PRIVATE_KEY }}
 
   test:
     needs: select-runner
@@ -141,10 +138,11 @@ The second pool's image must provide the Xcode version the job selects.
 | `running-threshold` | no | `13` | Overflow when this many mobile Mac jobs, or more, are running on GitHub's pool. The org limit is 15, so 13 leaves 2 for other org repositories. |
 | `queued-seconds` | no | `30` | Overflow when a mobile Mac job has been queued on GitHub's pool for longer than this. |
 
-| Secret | Purpose |
-| --- | --- |
-| `RUNNER_SELECT_APP_CLIENT_ID` | Client ID of a read-only GitHub App with Actions: read on the mobile repositories. |
-| `RUNNER_SELECT_APP_PRIVATE_KEY` | That App's private key. `actions/create-github-app-token` mints a short-lived token from it. |
+No secrets are needed. The mobile repositories are public, so the selector job's
+own `GITHUB_TOKEN`, with no scopes, reads their runs and jobs. That token allows
+1,000 API calls per hour per repository, shared with every other use of it in
+the caller's repository. A selection that runs out gets the GitHub label, and
+its note says it was rate limited.
 
 | Output | Value |
 | --- | --- |
@@ -170,13 +168,16 @@ Every path other than `capacity` and `queued` returns the GitHub label:
 
 - `switch-off`: `enabled` is not `true`, or `overflow-label` is empty.
 - `fork`: the pull request's head repository differs from the base repository.
-- `no-credentials`: the App secrets are missing or no token could be minted.
+- `no-credentials`: the action got an empty `token`. The reusable workflow
+  always passes the job's own token.
 - `invalid-input`: a threshold, label or repository name is malformed.
-- `api-error`: a request failed or timed out, a response could not be parsed,
-  the call cap or time budget ran out, or the selector step itself failed.
+- `api-error`: a request failed, timed out or was rate limited, a response
+  could not be parsed, the call cap or time budget ran out, or the selector
+  step itself failed. The note names the HTTP status, and says when it was a
+  rate limit.
 
-The selector job does not fail on any of these: the token and selection steps
-continue on error, and the job's outputs fall back to the GitHub label. The
+The selector job does not fail on any of these: the selection step continues
+on error, and the job's outputs fall back to the GitHub label. The
 workflow loads `github-actions/macos-runner-select/v1@main`, which holds the
 logic in `select.sh` and its stubbed tests in `test.sh`.
 
