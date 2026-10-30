@@ -124,6 +124,8 @@ jobs:
     uses: customerio/mobile-ci-tools/.github/workflows/ios-test.yml@main
     with:
       runner-label: ${{ needs.select-runner.outputs.label || 'xcode-27' }}
+      scheme: MyScheme
+      xcresult-name: MyScheme.xcresult
 ```
 
 A job with its own `runs-on` uses
