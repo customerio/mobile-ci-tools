@@ -1,0 +1,66 @@
+name: Select a macOS runner
+description: Return the GitHub macOS label, or the second pool's label when GitHub's macOS pool is busy with mobile jobs. Falls back to the GitHub label when the switch is off, for fork PRs, without a token, and on any API error.
+
+inputs:
+  enabled:
+    description: The switch. Only the exact string 'true' runs the overflow check. Feed it from a repository variable.
+    required: false
+    default: 'false'
+  github-label:
+    description: GitHub-hosted runner label the job uses today, for example xcode-27.
+    required: true
+  overflow-label:
+    description: Runner label of the second pool. Empty means the overflow check does not run.
+    required: false
+    default: ''
+  running-threshold:
+    description: Overflow when this many mobile Mac jobs, or more, are running on GitHub's pool. The org limit is 15, so 13 leaves 2 for other org repositories.
+    required: false
+    default: '13'
+  queued-seconds:
+    description: Overflow when a mobile Mac job has been queued on GitHub's pool for longer than this.
+    required: false
+    default: '30'
+  repositories:
+    description: Mobile repositories to count, comma or newline separated, without the owner.
+    required: false
+    default: customerio-ios,customerio-expo-plugin,customerio-reactnative,customerio-flutter,customerio-ios-fcm
+  token:
+    description: Token that can read the Actions runs of every listed repository. For public repositories the job's own token works with no scopes. Empty means the GitHub label.
+    required: false
+    default: ''
+
+outputs:
+  label:
+    description: Runner label to use in runs-on.
+    value: ${{ steps.select.outputs.label }}
+  reason:
+    description: switch-off, fork, no-credentials, invalid-input, api-error, capacity, queued, or free.
+    value: ${{ steps.select.outputs.reason }}
+  running:
+    description: Mobile Mac jobs counted as running on GitHub's pool. A lower bound when the check stopped early.
+    value: ${{ steps.select.outputs.running }}
+  queued:
+    description: Mobile Mac jobs counted as queued there for longer than queued-seconds.
+    value: ${{ steps.select.outputs.queued }}
+  api-calls:
+    description: GitHub API requests this selection made.
+    value: ${{ steps.select.outputs.api-calls }}
+
+runs:
+  using: composite
+  steps:
+    - name: Select a macOS runner label
+      id: select
+      shell: bash
+      env:
+        SELECT_ENABLED: ${{ inputs.enabled }}
+        SELECT_GITHUB_LABEL: ${{ inputs.github-label }}
+        SELECT_OVERFLOW_LABEL: ${{ inputs.overflow-label }}
+        SELECT_RUNNING_THRESHOLD: ${{ inputs.running-threshold }}
+        SELECT_QUEUED_SECONDS: ${{ inputs.queued-seconds }}
+        SELECT_REPOSITORIES: ${{ inputs.repositories }}
+        SELECT_TOKEN: ${{ inputs.token }}
+        SELECT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        SELECT_PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+      run: bash "$GITHUB_ACTION_PATH/select.sh"

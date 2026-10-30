@@ -1,0 +1,75 @@
+name: macOS Runner Select
+
+# Picks the runner label for a caller's macOS job: GitHub's label, or the
+# second pool's label when GitHub's macOS pool is busy with mobile jobs. It runs
+# on ubuntu-latest so the check never takes a Mac slot, and it never fails the
+# caller: every error path returns the GitHub label. Release jobs must not call it.
+
+on:
+  workflow_call:
+    inputs:
+      enabled:
+        description: 'The switch, fed from vars.MACOS_OVERFLOW_ENABLED. Only the exact string ''true'' runs the overflow check, so callers that leave the variable unset see no change.'
+        required: false
+        type: string
+        default: 'false'
+      github-label:
+        description: 'GitHub-hosted runner label the job uses today, e.g. xcode-27.'
+        required: true
+        type: string
+      overflow-label:
+        description: 'Runner label of the second pool, fed from vars.MACOS_OVERFLOW_RUNNER_LABEL. Empty means the overflow check does not run.'
+        required: false
+        type: string
+        default: ''
+      running-threshold:
+        description: 'Overflow when this many mobile Mac jobs, or more, are running on GitHub''s pool. The org limit is 15, so 13 leaves 2 for other org repositories.'
+        required: false
+        type: number
+        default: 13
+      queued-seconds:
+        description: 'Overflow when a mobile Mac job has been queued on GitHub''s pool for longer than this.'
+        required: false
+        type: number
+        default: 30
+    outputs:
+      label:
+        description: 'Runner label for the macOS job''s runs-on.'
+        value: ${{ jobs.select.outputs.label }}
+      reason:
+        description: 'switch-off, fork, no-credentials, invalid-input, api-error, capacity, queued, or free.'
+        value: ${{ jobs.select.outputs.reason }}
+      running:
+        description: 'Mobile Mac jobs counted as running on GitHub''s pool.'
+        value: ${{ jobs.select.outputs.running }}
+      queued:
+        description: 'Mobile Mac jobs counted as queued there for longer than queued-seconds.'
+        value: ${{ jobs.select.outputs.queued }}
+
+jobs:
+  select:
+    name: Select macOS runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The mobile repositories are public, so the job's own token reads their runs
+    # and jobs with no scopes.
+    permissions: {}
+    outputs:
+      # The fallbacks cover a selector step that failed or timed out before writing outputs.
+      label: ${{ steps.select.outputs.label || inputs.github-label }}
+      reason: ${{ steps.select.outputs.reason || 'api-error' }}
+      running: ${{ steps.select.outputs.running || '0' }}
+      queued: ${{ steps.select.outputs.queued || '0' }}
+    steps:
+      - name: Select the runner label
+        id: select
+        timeout-minutes: 2
+        continue-on-error: true
+        uses: customerio/mobile-ci-tools/github-actions/macos-runner-select/v1@main
+        with:
+          enabled: ${{ inputs.enabled }}
+          github-label: ${{ inputs.github-label }}
+          overflow-label: ${{ inputs.overflow-label }}
+          running-threshold: ${{ inputs.running-threshold }}
+          queued-seconds: ${{ inputs.queued-seconds }}
+          token: ${{ github.token }}
