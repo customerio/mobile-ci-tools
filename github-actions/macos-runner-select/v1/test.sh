@@ -46,6 +46,10 @@ if [[ -n "${STUB_HTTP_STATUS:-}" ]]; then
 fi
 path="${url#https://api.example.test}"
 fixture="$STUB_FIXTURES/$(printf '%s' "$path" | tr -c 'A-Za-z0-9' '_')"
+# The spend endpoint answers from the "spend" fixture, whatever the query.
+if [[ "$url" == https://spend.example.test/* ]]; then
+  fixture="$STUB_FIXTURES/spend"
+fi
 if [[ -f "$fixture" ]]; then
   cp "$fixture" "$output"
   respond 200
@@ -347,5 +351,80 @@ jq -n --argjson job "$(job queued xcode-27 null 60)" '{total_count: 101, jobs: [
 run_select paged-jobs > /dev/null
 expect paged-jobs second-pool-macos queued
 grep -q 'runs/801/jobs?filter=latest&per_page=100&page=2' "$temporary_root/paged-jobs/calls"
+
+# Spend guard: with a monthly cap set, an overflow decision first reads spend.
+# The thirteen-running fixtures overflow on capacity after 5 GitHub calls.
+spend_case() {
+  local case_name="$1" spend_json="$2"
+  shift 2
+  cp "$temporary_root/thirteen-running/fixtures/"* "$(prepare "$case_name")/"
+  if [[ -n "$spend_json" ]]; then
+    printf '%s\n' "$spend_json" > "$temporary_root/$case_name/fixtures/spend"
+  fi
+  run_select "$case_name" \
+    SELECT_MONTHLY_SPEND_CAP=200 \
+    SELECT_SPEND_URL=https://spend.example.test/billing \
+    SELECT_SPEND_API_KEY=stub-spend-key \
+    "$@"
+}
+
+spend_case spend-under '{"summary":{"total_cost":189.99}}'
+expect spend-under second-pool-macos capacity
+grep -Fq 'spend is 94% of the monthly cap.' "$temporary_root/spend-under/summary"
+grep -c . "$temporary_root/spend-under/calls" | grep -qx 6
+grep -Fq "https://spend.example.test/billing?start_date=$(date -u -d "@$now" +%Y-%m-01T00:00:00Z 2>/dev/null || date -u -r "$now" +%Y-%m-01T00:00:00Z)&end_date=" \
+  "$temporary_root/spend-under/calls"
+if grep -Fq 'stub-spend-key' <(cut -d'|' -f1 "$temporary_root/spend-under/calls"); then
+  echo "The spend key reached curl's command line." >&2
+  exit 1
+fi
+grep -Fq 'Authorization: Bearer stub-spend-key' "$temporary_root/spend-under/calls"
+
+spend_case spend-at-stop '{"summary":{"total_cost":190}}'
+expect spend-at-stop xcode-27 spend-cap
+grep -Fq 'spend is 95% of the monthly cap, at or above the 95% stop line' "$temporary_root/spend-at-stop/summary"
+if grep -Fq '190' "$temporary_root/spend-at-stop/summary"; then
+  echo "The spend amount reached the step summary." >&2
+  exit 1
+fi
+
+spend_case spend-custom-stop '{"summary":{"total_cost":160}}' SELECT_SPEND_STOP_PERCENT=80
+expect spend-custom-stop xcode-27 spend-cap
+
+spend_case spend-no-key '{"summary":{"total_cost":0}}' SELECT_SPEND_API_KEY=
+expect spend-no-key xcode-27 spend-unknown
+grep -c . "$temporary_root/spend-no-key/calls" | grep -qx 5
+
+spend_case spend-http-error ''
+expect spend-http-error xcode-27 spend-unknown
+grep -Fq 'spend check failed with HTTP 404' "$temporary_root/spend-http-error/summary"
+
+spend_case spend-malformed '{"summary":{"total_cost":"lots"}}'
+expect spend-malformed xcode-27 spend-unknown
+
+spend_case spend-negative '{"summary":{"total_cost":-5}}'
+expect spend-negative xcode-27 spend-unknown
+
+# A quiet pool never reads spend.
+cp "$temporary_root/free/fixtures/"* "$(prepare spend-free)/"
+run_select spend-free SELECT_MONTHLY_SPEND_CAP=200 SELECT_SPEND_URL=https://spend.example.test/billing SELECT_SPEND_API_KEY=stub-spend-key
+expect spend-free xcode-27 free
+expect_calls spend-free 11
+
+# A cap of 0, the default, turns the guard off.
+cp "$temporary_root/thirteen-running/fixtures/"* "$(prepare spend-off)/"
+run_select spend-off SELECT_SPEND_URL=https://spend.example.test/billing
+expect spend-off second-pool-macos capacity
+expect_calls spend-off 5
+
+for bad in 'SELECT_MONTHLY_SPEND_CAP=abc' 'SELECT_SPEND_STOP_PERCENT=0' 'SELECT_SPEND_STOP_PERCENT=101' \
+    'SELECT_SPEND_URL=http://spend.example.test/billing' 'SELECT_SPEND_URL=https://spend.example.test/billing?x=1'; do
+  case_name="bad-spend-${bad%%=*}-$(fixture_name "${bad#*=}")"
+  if run_select "$case_name" "$bad" > /dev/null; then
+    echo "Expected $bad to fail." >&2
+    exit 1
+  fi
+  expect "$case_name" xcode-27 invalid-input
+done
 
 echo "macos-runner-select tests passed"
