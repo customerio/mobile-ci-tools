@@ -117,6 +117,15 @@ jobs:
         env:
           LIVE_REASON: ${{ steps.live.outputs.reason }}
           LIVE_API_CALLS: ${{ steps.live.outputs.api-calls }}
+          LIVE_RUNNING: ${{ steps.live.outputs.running }}
+          LIVE_QUEUED: ${{ steps.live.outputs.queued }}
+        # Each reason has to agree with the counts behind it, at the default threshold of 13. A page-size
+        # overflow with fewer than 13 running is the one legitimate mismatch, and it needs over 100 active runs.
         run: |
-          [[ "$LIVE_REASON" =~ ^(free|capacity|queued)$ ]]
           (( LIVE_API_CALLS > 0 ))
+          case "$LIVE_REASON" in
+            free) (( LIVE_RUNNING < 13 && LIVE_QUEUED == 0 )) ;;
+            capacity) (( LIVE_RUNNING >= 13 )) ;;
+            queued) (( LIVE_QUEUED >= 1 )) ;;
+            *) echo "Unexpected reason: $LIVE_REASON" >&2; exit 1 ;;
+          esac
