@@ -1,5 +1,5 @@
 name: Select a macOS runner
-description: Return the GitHub macOS label, or the second pool's label when GitHub's macOS pool is busy with mobile jobs. Falls back to the GitHub label when the switch is off, for fork PRs, without a token, and on any API error.
+description: Return the GitHub macOS label, or the second pool's label when GitHub's macOS pool is busy with mobile jobs. Falls back to the GitHub label when the switch is off, for fork PRs, without a token, on any API error, and when a set monthly spend cap is nearly used or spend can't be read.
 
 inputs:
   enabled:
@@ -29,13 +29,29 @@ inputs:
     description: Token that can read the Actions runs of every listed repository. For public repositories the job's own token works with no scopes. Empty means the GitHub label.
     required: false
     default: ''
+  monthly-spend-cap:
+    description: The second pool's monthly spend cap, in the unit the spend endpoint reports. 0 turns the spend check off.
+    required: false
+    default: '0'
+  spend-stop-percent:
+    description: Keep jobs on GitHub once month-to-date spend reaches this percentage of monthly-spend-cap.
+    required: false
+    default: '95'
+  spend-url:
+    description: https URL of the second pool's spend endpoint, without a query. The check adds start_date and end_date for the current UTC month and reads summary.total_cost.
+    required: false
+    default: ''
+  spend-api-key:
+    description: Bearer key for spend-url. Pass it from a secret. With a cap set and no key, overflow decisions stay on GitHub.
+    required: false
+    default: ''
 
 outputs:
   label:
     description: Runner label to use in runs-on.
     value: ${{ steps.select.outputs.label }}
   reason:
-    description: switch-off, fork, no-credentials, invalid-input, api-error, capacity, queued, or free.
+    description: switch-off, fork, no-credentials, invalid-input, api-error, spend-cap, spend-unknown, capacity, queued, or free.
     value: ${{ steps.select.outputs.reason }}
   running:
     description: Mobile Mac jobs counted as running on GitHub's pool. A lower bound when the check stopped early.
@@ -61,6 +77,10 @@ runs:
         SELECT_QUEUED_SECONDS: ${{ inputs.queued-seconds }}
         SELECT_REPOSITORIES: ${{ inputs.repositories }}
         SELECT_TOKEN: ${{ inputs.token }}
+        SELECT_MONTHLY_SPEND_CAP: ${{ inputs.monthly-spend-cap }}
+        SELECT_SPEND_STOP_PERCENT: ${{ inputs.spend-stop-percent }}
+        SELECT_SPEND_URL: ${{ inputs.spend-url }}
+        SELECT_SPEND_API_KEY: ${{ inputs.spend-api-key }}
         SELECT_PR_NUMBER: ${{ github.event.pull_request.number }}
         SELECT_PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
       run: bash "$GITHUB_ACTION_PATH/select.sh"

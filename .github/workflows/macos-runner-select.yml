@@ -32,12 +32,31 @@ on:
         required: false
         type: number
         default: 30
+      monthly-spend-cap:
+        description: 'The second pool''s monthly spend cap, in the unit the spend endpoint reports. 0 turns the spend check off.'
+        required: false
+        type: number
+        default: 0
+      spend-stop-percent:
+        description: 'Keep jobs on GitHub once month-to-date spend reaches this percentage of monthly-spend-cap.'
+        required: false
+        type: number
+        default: 95
+      spend-url:
+        description: 'https URL of the second pool''s spend endpoint, without a query.'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      spend-api-key:
+        description: 'Bearer key for spend-url.'
+        required: false
     outputs:
       label:
         description: 'Runner label for the macOS job''s runs-on.'
         value: ${{ jobs.select.outputs.label }}
       reason:
-        description: 'switch-off, fork, no-credentials, invalid-input, api-error, capacity, queued, or free.'
+        description: 'switch-off, fork, no-credentials, invalid-input, api-error, spend-cap, spend-unknown, capacity, queued, or free.'
         value: ${{ jobs.select.outputs.reason }}
       running:
         description: 'Mobile Mac jobs counted as running on GitHub''s pool.'
@@ -73,3 +92,7 @@ jobs:
           running-threshold: ${{ inputs.running-threshold }}
           queued-seconds: ${{ inputs.queued-seconds }}
           token: ${{ github.token }}
+          monthly-spend-cap: ${{ inputs.monthly-spend-cap }}
+          spend-stop-percent: ${{ inputs.spend-stop-percent }}
+          spend-url: ${{ inputs.spend-url }}
+          spend-api-key: ${{ secrets.spend-api-key }}

@@ -7,6 +7,10 @@
 #   - queued: a mobile Mac job has waited there longer than queued-seconds.
 # Every other path, including any API error, returns the GitHub label, so a
 # failure here never runs a job anywhere it would not run today.
+#
+# With a monthly spend cap set, an overflow decision first reads the second
+# pool's month-to-date spend. At or above spend-stop-percent of the cap, or when
+# the spend can't be read, the job stays on GitHub.
 
 set -euo pipefail
 
@@ -21,6 +25,10 @@ owner="${GITHUB_REPOSITORY_OWNER:-}"
 pr_number="${SELECT_PR_NUMBER:-}"
 pr_head_repository="${SELECT_PR_HEAD_REPOSITORY:-}"
 api_url="${GITHUB_API_URL:-https://api.github.com}"
+monthly_cap="${SELECT_MONTHLY_SPEND_CAP:-0}"
+spend_stop_percent="${SELECT_SPEND_STOP_PERCENT:-95}"
+spend_url="${SELECT_SPEND_URL:-}"
+spend_key="${SELECT_SPEND_API_KEY:-}"
 
 # Bounds on the API work for one selection. The overrides exist for test.sh.
 request_seconds="${SELECT_REQUEST_SECONDS:-5}"
@@ -91,6 +99,17 @@ fi
 
 if [[ ! "$running_threshold" =~ ^[1-9][0-9]*$ || ! "$queued_seconds" =~ ^[0-9]+$ ]]; then
   note="running-threshold must be a positive whole number and queued-seconds a whole number."
+  echo "::error title=macOS runner selection::$note Using the GitHub label."
+  finish invalid-input 1
+fi
+
+if [[ ! "$monthly_cap" =~ ^[0-9]+$ || ! "$spend_stop_percent" =~ ^([1-9][0-9]?|100)$ ]]; then
+  note="monthly-spend-cap must be a whole number and spend-stop-percent a whole number from 1 to 100."
+  echo "::error title=macOS runner selection::$note Using the GitHub label."
+  finish invalid-input 1
+fi
+if [[ -n "$spend_url" && ! "$spend_url" =~ ^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/-]*)?$ ]]; then
+  note="spend-url must be an https URL without a query string."
   echo "::error title=macOS runner selection::$note Using the GitHub label."
   finish invalid-input 1
 fi
@@ -200,6 +219,56 @@ api_get() {
   return 1
 }
 
+# Finishes with the overflow label for the given reason, unless a monthly spend
+# cap is set and the second pool's month-to-date spend is at or above the stop
+# line, or can't be read. The key goes to curl on stdin, like the GitHub token.
+# The note gives the share of the cap only, never an amount.
+overflow() {
+  local reason="$1" status spend share remaining limit month_start month_now
+  if (( monthly_cap == 0 )); then
+    finish "$reason"
+  fi
+  if [[ -z "$spend_url" || -z "$spend_key" ]]; then
+    note="$note A monthly spend cap is set, but spend-url or the spend key is empty, so the job stays on GitHub."
+    finish spend-unknown
+  fi
+  remaining=$((deadline - SECONDS))
+  if (( remaining <= 0 )); then
+    note="$note The time budget ran out before the spend check, so the job stays on GitHub."
+    finish spend-unknown
+  fi
+  limit=$(( remaining < request_seconds ? remaining : request_seconds ))
+  month_start="$(date -u -d "@$now" +%Y-%m-01T00:00:00Z 2>/dev/null || date -u -r "$now" +%Y-%m-01T00:00:00Z)"
+  month_now="$(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$now" +%Y-%m-%dT%H:%M:%SZ)"
+  if ! status="$(printf 'header = "Authorization: Bearer %s"\n' "$spend_key" | curl \
+      --config - \
+      --silent --show-error \
+      --connect-timeout "$limit" \
+      --max-time "$limit" \
+      --header 'Accept: application/json' \
+      --output "$response_file" \
+      --write-out '%{http_code}' \
+      "$spend_url?start_date=$month_start&end_date=$month_now")"; then
+    note="$note The spend check failed, so the job stays on GitHub."
+    finish spend-unknown
+  fi
+  if [[ "$status" != 2?? ]]; then
+    note="$note The spend check failed with HTTP $status, so the job stays on GitHub."
+    finish spend-unknown
+  fi
+  if ! spend="$(jq -er '.summary.total_cost | numbers | select(. >= 0)' "$response_file")"; then
+    note="$note The spend response could not be read, so the job stays on GitHub."
+    finish spend-unknown
+  fi
+  share="$(awk -v spend="$spend" -v cap="$monthly_cap" 'BEGIN { printf "%d", spend * 100 / cap }')"
+  if awk -v spend="$spend" -v cap="$monthly_cap" -v stop="$spend_stop_percent" 'BEGIN { exit !(spend * 100 >= cap * stop) }'; then
+    note="$note Month-to-date spend is ${share}% of the monthly cap, at or above the ${spend_stop_percent}% stop line, so the job stays on GitHub."
+    finish spend-cap
+  fi
+  note="$note Month-to-date spend is ${share}% of the monthly cap."
+  finish "$reason"
+}
+
 # Counts this run's mobile Mac jobs that are on GitHub's pool. A Mac job has a
 # label starting with macos or xcode, in any case. Jobs carrying the overflow
 # label, or assigned to a runner group other than GitHub's, are on the second
@@ -241,7 +310,7 @@ for repository in "${repository_list[@]}"; do
     fi
     if (( run_total > ${#run_id_list[@]} )); then
       note="$repository has $run_total $run_status runs, more than one page, so the pool is treated as busy."
-      finish capacity
+      overflow capacity
     fi
     # The guarded expansion keeps an empty list safe under set -u in Bash 3.2.
     for run_id in ${run_id_list[@]+"${run_id_list[@]}"}; do
@@ -263,11 +332,11 @@ for repository in "${repository_list[@]}"; do
         queued=$((queued + run_queued))
         if (( queued > 0 )); then
           note="Stopped early: a Mac job waited longer than ${queued_seconds}s, so counts may be partial."
-          finish queued
+          overflow queued
         fi
         if (( running >= running_threshold )); then
           note="Stopped early: at least $running_threshold Mac jobs are running, so counts may be partial."
-          finish capacity
+          overflow capacity
         fi
         # The call cap and time budget in api_get still bound this loop.
         (( job_total > page * 100 )) || break
