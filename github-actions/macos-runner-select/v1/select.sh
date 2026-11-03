@@ -34,6 +34,8 @@ spend_key="${SELECT_SPEND_API_KEY:-}"
 request_seconds="${SELECT_REQUEST_SECONDS:-5}"
 total_seconds="${SELECT_TOTAL_SECONDS:-20}"
 max_api_calls="${SELECT_MAX_API_CALLS:-40}"
+# The page size of the runs listing, which is also the API's per_page limit.
+runs_per_page=100
 
 running=0
 queued=0
@@ -294,7 +296,7 @@ count_jobs() {
 # fires, which keeps busy periods, when it fires early, the cheapest.
 for repository in "${repository_list[@]}"; do
   for run_status in queued in_progress; do
-    if ! api_get "/repos/$owner/$repository/actions/runs?status=$run_status&per_page=100"; then
+    if ! api_get "/repos/$owner/$repository/actions/runs?status=$run_status&per_page=$runs_per_page"; then
       finish api-error
     fi
     if ! run_ids="$(jq -er '.workflow_runs | map(.id | tostring) | join(" ")' "$response_file")"; then
@@ -303,12 +305,13 @@ for repository in "${repository_list[@]}"; do
     fi
     read -r -a run_id_list <<< "$run_ids"
     # More active runs than one page holds means the repository is far busier than usual, so the pool is treated
-    # as busy instead of spending the call budget on further pages.
+    # as busy instead of spending the call budget on further pages. The total is compared with the page size, not
+    # with the runs listed: the count and the list can disagree for a moment while a run changes state.
     if ! run_total="$(jq -er '.total_count' "$response_file")"; then
       note="The $run_status runs of $repository could not be read."
       finish api-error
     fi
-    if (( run_total > ${#run_id_list[@]} )); then
+    if (( run_total > runs_per_page )); then
       note="$repository has $run_total $run_status runs, more than one page, so the pool is treated as busy."
       overflow capacity
     fi

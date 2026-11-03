@@ -342,6 +342,24 @@ run_select many-runs > /dev/null
 expect many-runs second-pool-macos capacity
 expect_calls many-runs 1
 
+# The run count and the listing can disagree for a moment while a run changes state.
+# A count above the listed runs but within one page is not "more than a page".
+fixtures="$(prepare count-mismatch)"
+jq -n '{total_count: 2, workflow_runs: [{id: 950}]}' \
+  > "$fixtures/$(fixture_name "/repos/customerio/customerio-ios/actions/runs?status=queued&per_page=100")"
+write_jobs "$fixtures" customerio-ios 950 "$(job queued xcode-27 null 10)"
+run_select count-mismatch > /dev/null
+expect count-mismatch xcode-27 free
+expect_calls count-mismatch 11
+
+# Exactly one page of runs is read, not treated as busy: 100 is the page size.
+fixtures="$(prepare full-page)"
+jq -n '{total_count: 100, workflow_runs: [{id: 951}]}' \
+  > "$fixtures/$(fixture_name "/repos/customerio/customerio-ios/actions/runs?status=queued&per_page=100")"
+write_jobs "$fixtures" customerio-ios 951 "$(job queued xcode-27 null 10)"
+run_select full-page > /dev/null
+expect full-page xcode-27 free
+
 fixtures="$(prepare paged-jobs)"
 write_runs "$fixtures" customerio-ios in_progress 801
 jq -n --argjson job "$(job in_progress xcode-27 'GitHub Actions' 300)" '{total_count: 101, jobs: [$job]}' \
