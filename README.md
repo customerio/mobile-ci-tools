@@ -98,6 +98,115 @@ table to the step summary. Invalid input fails before any request is made. The
 action needs Python 3.9 or later as `python3`, and `curl`. Hosted Ubuntu and
 macOS runners provide both.
 
+### macOS runner selection with overflow to a second pool
+
+`.github/workflows/macos-runner-select.yml` picks the runner label for a macOS
+job. It returns the second pool's label when GitHub's macOS pool is busy with
+mobile jobs, and the GitHub label otherwise. It runs on `ubuntu-latest`, so the
+check never takes a Mac slot. Call it from PR and CI workflows only; release
+jobs keep their fixed label and never call it.
+
+```yaml
+jobs:
+  select-runner:
+    # Skipped while the switch is off, so the Mac job starts exactly as before.
+    if: vars.MACOS_OVERFLOW_ENABLED == 'true'
+    uses: customerio/mobile-ci-tools/.github/workflows/macos-runner-select.yml@main
+    with:
+      enabled: ${{ vars.MACOS_OVERFLOW_ENABLED }}
+      github-label: xcode-27
+      overflow-label: ${{ vars.MACOS_OVERFLOW_RUNNER_LABEL }}
+      # Optional spend check; leave these out to turn it off.
+      monthly-spend-cap: ${{ fromJSON(vars.MACOS_OVERFLOW_MONTHLY_CAP || '0') }}
+      spend-url: ${{ vars.MACOS_OVERFLOW_SPEND_URL }}
+    secrets:
+      spend-api-key: ${{ secrets.MACOS_OVERFLOW_SPEND_API_KEY }}
+
+  test:
+    needs: select-runner
+    # Runs when the selector succeeded, was skipped, or failed. Only a cancelled run stops it.
+    if: ${{ !cancelled() }}
+    uses: customerio/mobile-ci-tools/.github/workflows/ios-test.yml@main
+    with:
+      runner-label: ${{ needs.select-runner.outputs.label || 'xcode-27' }}
+      scheme: MyScheme
+      xcresult-name: MyScheme.xcresult
+```
+
+A job with its own `runs-on` uses
+`runs-on: ${{ needs.select-runner.outputs.label || 'xcode-27' }}` the same way.
+The second pool's image must provide the Xcode version the job selects.
+
+| Input | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `enabled` | no | `'false'` | The switch. Only the exact string `true` runs the check. Feed it from `vars.MACOS_OVERFLOW_ENABLED`. |
+| `github-label` | yes | | GitHub-hosted label the job uses today, such as `xcode-27`. |
+| `overflow-label` | no | `''` | The second pool's label. Feed it from `vars.MACOS_OVERFLOW_RUNNER_LABEL`. Empty means the check does not run. |
+| `running-threshold` | no | `13` | Overflow when this many mobile Mac jobs, or more, are running on GitHub's pool. The org limit is 15, so 13 leaves 2 for other org repositories. |
+| `queued-seconds` | no | `30` | Overflow when a mobile Mac job has been queued on GitHub's pool for longer than this. |
+| `monthly-spend-cap` | no | `0` | The second pool's monthly spend cap, in the unit its spend endpoint reports. `0` turns the spend check off. Feed it from `vars.MACOS_OVERFLOW_MONTHLY_CAP`. |
+| `spend-stop-percent` | no | `95` | Keep jobs on GitHub once month-to-date spend reaches this percentage of the cap. |
+| `spend-url` | no | `''` | https URL of the second pool's spend endpoint, without a query. Feed it from `vars.MACOS_OVERFLOW_SPEND_URL`. |
+
+| Secret | Required | Purpose |
+| --- | --- | --- |
+| `spend-api-key` | no | Bearer key for `spend-url`. Needed only when `monthly-spend-cap` is set. |
+
+The mobile repositories are public, so the selector job's
+own `GITHUB_TOKEN`, with no scopes, reads their runs and jobs. That token allows
+1,000 API calls per hour per repository, shared with every other use of it in
+the caller's repository. A selection that runs out gets the GitHub label, and
+its note says it was rate limited.
+
+| Output | Value |
+| --- | --- |
+| `label` | The label for `runs-on` or `runner-label`. |
+| `reason` | `switch-off`, `fork`, `no-credentials`, `invalid-input`, `api-error`, `spend-cap`, `spend-unknown`, `capacity`, `queued`, or `free`. |
+| `running` | Mobile Mac jobs counted as running on GitHub's pool. |
+| `queued` | Mobile Mac jobs counted as queued there for longer than `queued-seconds`. |
+
+The mobile repositories are customerio-ios, customerio-expo-plugin,
+customerio-reactnative, customerio-flutter and customerio-ios-fcm. A Mac job
+has a label starting with `macos` or `xcode`, in any case. Jobs that carry the
+overflow label, or run in a runner group other than `GitHub Actions`, are on the
+second pool and are not counted. For each repository the selector lists the
+`queued` and then the `in_progress` runs, then reads each run's jobs, and stops
+as soon as either signal fires. One selection makes 10 listing calls plus one
+call per active run (and one per further page of a run with more than 100
+jobs), capped at 40. A repository with more than 100 queued or running runs
+counts as `capacity` without further reads. Each request is limited to 5 seconds and the
+whole check to 20 seconds. The label, reason, counts and call count go to the
+step summary.
+
+With `monthly-spend-cap` set, a selection that would overflow first reads the
+second pool's month-to-date spend: one request to `spend-url` with
+`start_date` and `end_date` for the current UTC month, reading
+`summary.total_cost`. A quiet pool never makes this request. The step summary
+gives spend as a share of the cap, never as an amount. The key is passed only
+to the selector job, which runs on GitHub's Ubuntu runners.
+
+Every path other than `capacity` and `queued` returns the GitHub label:
+
+- `switch-off`: `enabled` is not `true`, or `overflow-label` is empty.
+- `fork`: the pull request's head repository differs from the base repository.
+- `no-credentials`: the action got an empty `token`. The reusable workflow
+  always passes the job's own token.
+- `invalid-input`: a threshold, label, repository name, spend cap, stop
+  percentage or `spend-url` is malformed.
+- `api-error`: a request failed, timed out or was rate limited, a response
+  could not be parsed, the call cap or time budget ran out, or the selector
+  step itself failed. The note names the HTTP status, and says when it was a
+  rate limit.
+- `spend-cap`: the pool was busy, but month-to-date spend is at or above
+  `spend-stop-percent` of the cap.
+- `spend-unknown`: the pool was busy and a cap is set, but spend could not be
+  read: no URL or key, a failed request, or a response without a number.
+
+The selector job does not fail on any of these: the selection step continues
+on error, and the job's outputs fall back to the GitHub label. The
+workflow loads `github-actions/macos-runner-select/v1@main`, which holds the
+logic in `select.sh` and its stubbed tests in `test.sh`.
+
 ### Scheduled-run failure alerts to Slack
 
 `github-actions/slack-notify-scheduled-failure/v1` posts a failed **scheduled**

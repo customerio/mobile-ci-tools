@@ -23,6 +23,11 @@ on:
         # customerio-ios and customerio-ios-fcm pass the input explicitly.
         type: string
         default: '3.2'
+      timeout-minutes:
+        description: 'Maximum minutes the job may run before it is cancelled. The default is GitHub''s own limit of 360, so callers that do not set it see no change.'
+        required: false
+        type: number
+        default: 360
       scheme:
         description: 'Xcode scheme name to test'
         required: true
@@ -39,6 +44,7 @@ on:
 jobs:
   automated-tests:
     runs-on: ${{ inputs.runner-label }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       checks: write # Need write permission to add test result check.
     env:
