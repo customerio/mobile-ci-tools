@@ -1,7 +1,9 @@
 import json
 import os
+import socket
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -219,6 +221,52 @@ class RenderTests(unittest.TestCase):
     def test_approval_body(self):
         body = s.approval_body("dev", SHA, attestation())
         self.assertIn("cio-code-review 2.5.0, 2 nit(s)", body)
+
+
+class RequestRetryTests(unittest.TestCase):
+    class Response:
+        status = 200
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def run_request(self, method, outcomes):
+        calls = []
+
+        def fake_urlopen(req, timeout):
+            calls.append(req)
+            outcome = outcomes[min(len(calls) - 1, len(outcomes) - 1)]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        with mock.patch.object(s.urllib.request, "urlopen", fake_urlopen), mock.patch.object(s.time, "sleep"):
+            try:
+                result = s.request(method, "https://example.test/x", "token", None if method == "GET" else {})
+            except OSError as e:
+                return e, len(calls)
+        return result, len(calls)
+
+    def test_get_retries_a_read_timeout_then_succeeds(self):
+        (status, payload, _), calls = self.run_request("GET", [socket.timeout("read timed out"), self.Response()])
+        self.assertEqual((status, payload, calls), (200, {"ok": True}, 2))
+
+    def test_get_gives_up_after_three_read_timeouts(self):
+        error, calls = self.run_request("GET", [socket.timeout("read timed out")])
+        self.assertIsInstance(error, socket.timeout)
+        self.assertEqual(calls, 3)
+
+    def test_post_does_not_retry_a_read_timeout(self):
+        error, calls = self.run_request("POST", [socket.timeout("read timed out"), self.Response()])
+        self.assertIsInstance(error, socket.timeout)
+        self.assertEqual(calls, 1)
 
 
 if __name__ == "__main__":

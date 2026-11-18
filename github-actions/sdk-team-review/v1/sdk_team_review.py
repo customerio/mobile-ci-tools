@@ -22,6 +22,7 @@ the decision and writes nothing, which also works from a laptop:
 """
 
 import base64
+import http.client
 import json
 import os
 import re
@@ -257,6 +258,13 @@ def request(method, url, token, body=None):
             return e.code, payload, ""
         except urllib.error.URLError:
             if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+        except (OSError, http.client.HTTPException):
+            # A read timeout or a dropped connection after the request was sent. Only GET is safe to
+            # repeat; a repeated POST could leave a second comment or approval.
+            if method == "GET" and attempt < 2:
                 time.sleep(2 * (attempt + 1))
                 continue
             raise
