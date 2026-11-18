@@ -1,0 +1,27 @@
+name: SDK team review action
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/sdk-team-review-test.yml'
+      - 'github-actions/sdk-team-review/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sdk-team-review-test.yml'
+      - 'github-actions/sdk-team-review/**'
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Unit tests
+        run: |
+          python3 --version
+          python3 -m unittest discover -s github-actions/sdk-team-review/v1 -v

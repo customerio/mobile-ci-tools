@@ -1,0 +1,75 @@
+name: SDK team review
+description: >-
+  Decides whether a PR head that passed a local Claude review can get the
+  approver bot's approval, and dismisses bot approvals that no longer match the
+  PR. Shadow mode only comments the decision.
+
+inputs:
+  command:
+    description: 'evaluate or dismiss.'
+    required: true
+  github-token:
+    description: 'Token for reads and PR comments, normally github.token with pull-requests: write. The dismiss command also uses it to dismiss reviews.'
+    required: true
+  pr-number:
+    description: 'Pull request number.'
+    required: true
+  head-sha:
+    description: 'evaluate: the commit the local review covered.'
+    required: false
+    default: ''
+  attestation:
+    description: 'evaluate: the JSON review summary the sdk-team-review skill sends.'
+    required: false
+    default: ''
+  mode:
+    description: 'evaluate: shadow (comment only) or enforce (approve).'
+    required: false
+    default: 'shadow'
+  actor:
+    description: 'evaluate: the person who requested the approval.'
+    required: false
+    default: ''
+  app-token:
+    description: 'evaluate: approver app token with pull-requests: write and org members: read. Required in enforce mode.'
+    required: false
+    default: ''
+  policy-path:
+    description: 'evaluate: path of the policy JSON, read from the default branch.'
+    required: false
+    default: '.github/sdk-team-review.json'
+  bot-login:
+    description: 'dismiss: the approver bot login, for example sdk-team-review[bot].'
+    required: false
+    default: ''
+  base-changed:
+    description: 'dismiss: true when the PR base branch changed, which dismisses every bot approval.'
+    required: false
+    default: 'false'
+
+outputs:
+  decision:
+    description: 'evaluate: approve or refuse.'
+    value: ${{ steps.run.outputs.decision }}
+  dismissed:
+    description: 'dismiss: number of bot approvals dismissed.'
+    value: ${{ steps.run.outputs.dismissed }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+        READ_TOKEN: ${{ inputs.github-token }}
+        APP_TOKEN: ${{ inputs.app-token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        ATTESTATION: ${{ inputs.attestation }}
+        MODE: ${{ inputs.mode }}
+        ACTOR: ${{ inputs.actor }}
+        POLICY_PATH: ${{ inputs.policy-path }}
+        BOT_LOGIN: ${{ inputs.bot-login }}
+        BASE_CHANGED: ${{ inputs.base-changed }}
+      run: python3 "$GITHUB_ACTION_PATH/sdk_team_review.py" "$COMMAND"

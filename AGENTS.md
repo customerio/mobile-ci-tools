@@ -14,6 +14,7 @@ Run from the repo root.
 - macOS runner selector test: `bash github-actions/macos-runner-select/v1/test.sh`
 - Shell lint: `shellcheck github-actions/ios/*/v1/*.sh`, `shellcheck github-actions/slack-notify-scheduled-failure/v1/*.sh` and `shellcheck github-actions/macos-runner-select/v1/*.sh`
 - wait-until-downloadable tests: `python3 -m unittest discover -s github-actions/wait-until-downloadable/v1 -v`
+- sdk-team-review tests: `python3 -m unittest discover -s github-actions/sdk-team-review/v1 -v`
 - android-publish plugin: `cd gradle-plugins/android-publish && ./gradlew build publishToMavenLocal`
 
 ## Gotchas
