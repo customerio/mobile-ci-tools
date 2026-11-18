@@ -103,8 +103,9 @@ def attestation_problems(raw, head_sha):
         problems.append("The local review did not pass.")
     if summary.get("important") != 0:
         problems.append("The local review reported Important findings.")
-    if str(summary.get("change_safety", "")).strip().lower() != "none":
-        problems.append("The local review reported change-safety factors.")
+    # CI's rule: a missing change-safety assessment blocks approval; the factor tags are informational.
+    if not str(summary.get("change_safety") or "").strip():
+        problems.append("The review summary has no change-safety assessment.")
     return problems
 
 

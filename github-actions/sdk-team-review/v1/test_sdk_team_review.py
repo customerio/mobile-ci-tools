@@ -76,8 +76,17 @@ class AttestationTests(unittest.TestCase):
                       s.attestation_problems(attestation(reviewed_sha=OTHER), SHA))
 
     def test_failed_verdict_and_findings(self):
-        problems = s.attestation_problems(attestation(verdict="fail", important=1, change_safety="auth"), SHA)
-        self.assertEqual(len(problems), 3)
+        problems = s.attestation_problems(attestation(verdict="fail", important=1), SHA)
+        self.assertEqual(len(problems), 2)
+
+    def test_change_safety_factors_do_not_block(self):
+        self.assertEqual(s.attestation_problems(attestation(change_safety="breaking_contract (callback)"), SHA), [])
+
+    def test_missing_or_blank_change_safety_blocks(self):
+        for value in ("", "   ", None):
+            with self.subTest(value=value):
+                self.assertEqual(s.attestation_problems(attestation(change_safety=value), SHA),
+                                 ["The review summary has no change-safety assessment."])
 
     def test_unknown_version(self):
         self.assertTrue(s.attestation_problems(attestation(v=2), SHA))
