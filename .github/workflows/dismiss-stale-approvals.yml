@@ -1,0 +1,81 @@
+name: Dismiss stale approvals
+
+# Dismisses every approval, from people and bots alike, that no longer covers a PR's code when the PR was
+# opened by `author-login` (Moby, through the Talon GitHub App, by default). Other authors' PRs skip the job,
+# so the repo's branch rules stay as they are for everyone else.
+#
+# An approval of an earlier commit is dismissed when:
+#   - the author pushes to the PR (a push by anyone else leaves approvals in place),
+#   - the PR's base branch changes, or
+#   - the PR is reopened.
+# An approval of the current head stays, so a re-approval after a push counts.
+#
+# Callers trigger it on `pull_request` (types: synchronize, reopened, edited). GitHub blocks
+# `pull_request_target` in public repos by default, and this job needs no secrets: it checks out nothing and
+# runs no code from the PR, only the script below with the caller's GITHUB_TOKEN.
+
+on:
+  workflow_call:
+    inputs:
+      author-login:
+        description: 'PR author whose PRs get stale approvals dismissed, as the REST API spells it (e.g. "talon-github-manager[bot]").'
+        required: false
+        type: string
+        default: 'talon-github-manager[bot]'
+      runner-label:
+        description: 'Runner label to run on.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
+permissions: {}
+
+jobs:
+  dismiss:
+    name: Dismiss stale approvals
+    # Fork PRs get a read-only token and can't be authored by the App, so only same-repo PRs run.
+    if: >-
+      ${{ github.event.pull_request.user.login == inputs.author-login
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && ((github.event.action == 'synchronize' && github.event.sender.login == inputs.author-login)
+              || github.event.action == 'reopened'
+              || (github.event.action == 'edited' && github.event.changes.base.ref.from != '')) }}
+    runs-on: ${{ inputs.runner-label }}
+    timeout-minutes: 3
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Dismiss approvals of earlier commits
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          retries: 3
+          script: |
+            const { owner, repo } = context.repo;
+            const event = context.payload;
+            const pull_number = event.pull_request.number;
+            const baseChanged = event.action === 'edited';
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+            if (pr.state !== 'open') {
+              core.info(`PR is ${pr.state}; nothing to dismiss.`);
+              return;
+            }
+            const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number, per_page: 100 });
+            // After a base change an approval can still name the head commit, so the event time decides.
+            const changedAt = Date.parse(event.pull_request.updated_at);
+            const stale = reviews.filter(review =>
+              review.state === 'APPROVED' &&
+              (baseChanged ? !(Date.parse(review.submitted_at) > changedAt) : review.commit_id !== pr.head.sha));
+            const message = baseChanged
+              ? 'The base branch changed after this approval. Review the PR again and approve it if it still looks right.'
+              : 'New commits were pushed after this approval. Review the latest changes and approve again if they look right.';
+            core.info(`action=${event.action} sender=${event.sender.login} head=${pr.head.sha.slice(0, 7)} stale=${stale.length}`);
+            for (const review of stale) {
+              core.info(`Dismissing approval ${review.id} by ${review.user?.login} of ${String(review.commit_id).slice(0, 7)}`);
+              try {
+                await github.rest.pulls.dismissReview({ owner, repo, pull_number, review_id: review.id, message });
+              } catch (error) {
+                // A concurrent run may have dismissed it first; only an approval still standing is a failure.
+                const { data: current } = await github.rest.pulls.getReview({ owner, repo, pull_number, review_id: review.id });
+                if (current.state !== 'DISMISSED') throw error;
+              }
+            }
