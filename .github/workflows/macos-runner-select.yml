@@ -65,6 +65,9 @@ on:
         description: 'Mobile Mac jobs counted as queued there for longer than queued-seconds.'
         value: ${{ jobs.select.outputs.queued }}
 
+permissions:
+  contents: read
+
 jobs:
   select:
     name: Select macOS runner

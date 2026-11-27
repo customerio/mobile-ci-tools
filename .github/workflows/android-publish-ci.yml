@@ -15,6 +15,9 @@ on:
       - 'gradle-plugins/android-publish/**'
       - 'github-actions/android/setup-android/**'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
