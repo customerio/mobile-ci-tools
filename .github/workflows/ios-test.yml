@@ -41,6 +41,9 @@ on:
         description: 'Codecov upload token'
         required: false
 
+permissions:
+  contents: read
+
 jobs:
   automated-tests:
     runs-on: ${{ inputs.runner-label }}

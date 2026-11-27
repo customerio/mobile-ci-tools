@@ -19,6 +19,9 @@ on:
         type: string
         default: ''
 
+permissions:
+  contents: read
+
 jobs:
   format-and-lint:
     name: Assert that code has been linted and formatted
